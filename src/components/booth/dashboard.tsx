@@ -3,6 +3,7 @@
 // Dashboard — live sales overview (10s auto-refresh) with optional day filter.
 
 import * as React from "react";
+import Image from "next/image";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Bar,
@@ -24,13 +25,16 @@ import {
   Clock3,
   Loader2,
   Moon,
+  Package,
   RefreshCw,
   Sunrise,
   Sun,
   Sunset,
   TrendingUp,
+  Users,
   Wallet,
 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -56,9 +60,10 @@ import { apiFetch } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { BOOTH_DAYS } from "@/lib/constants";
 import { formatPeso } from "@/lib/format";
-import type { DashboardStats, TimeOfDayStat } from "@/lib/types";
-import { BOOTH_QK, useApiError } from "./booth-utils";
+import type { DashboardStats, Product, TimeOfDayStat } from "@/lib/types";
+import { BOOTH_QK, asList, useApiError } from "./booth-utils";
 import { ViewHeader } from "./view-header";
+import { ProductBuyersDialog } from "./product-buyers-dialog";
 
 type DayFilter = "all" | "1" | "2" | "3";
 
@@ -231,6 +236,109 @@ function TotalCostCard({ totalCost }: { totalCost: number }) {
   );
 }
 
+/* ------------------------------------------------------------------ */
+/* Products — tap a card to see who bought it                          */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Product list on the dashboard: image + name (the two things the booth
+ * staff recognize fastest) plus price / sold / availability. Pressing a
+ * card opens the buyers table for that product.
+ */
+function ProductsSection({ onSelect }: { onSelect: (p: Product) => void }) {
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: ["booth", "products"],
+    queryFn: () => apiFetch<unknown>("/api/products"),
+  });
+
+  const products = React.useMemo(() => asList<Product>(data, "products"), [data]);
+
+  return (
+    <Card className="gap-4">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Package className="h-5 w-5 text-primary" aria-hidden />
+          Products
+        </CardTitle>
+        <CardDescription>
+          Tap a product to see the customers who bought it.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="px-4 sm:px-6">
+        {isLoading ? (
+          <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-4">
+            {[0, 1, 2, 3].map((i) => (
+              <Skeleton key={i} className="h-64 rounded-xl" />
+            ))}
+          </div>
+        ) : isError ? (
+          <EmptyState
+            title="Couldn't load products"
+            description="Check your connection and try again."
+            action={
+              <Button variant="outline" onClick={() => void refetch()}>
+                Try Again
+              </Button>
+            }
+          />
+        ) : products.length === 0 ? (
+          <EmptyState
+            icon={<Package className="h-6 w-6" aria-hidden />}
+            title="No products yet"
+            description="Add items to the menu in the Products view."
+          />
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-4">
+            {products.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => onSelect(p)}
+                aria-label={`Show customers who bought ${p.name}`}
+                className="group text-left focus-visible:outline-none"
+              >
+                <Card className="h-full gap-3 py-4 transition-colors group-hover:border-primary/40 group-hover:bg-accent/40 group-focus-visible:border-primary">
+                  <CardContent className="space-y-2.5 px-3">
+                    <div className="relative aspect-square w-full overflow-hidden rounded-lg border bg-muted">
+                      <Image
+                        src={p.image || "/images/products/ClassicCoffee.jpg"}
+                        alt={p.name}
+                        fill
+                        sizes="(min-width: 1280px) 22vw, (min-width: 640px) 30vw, 90vw"
+                        className="object-cover transition-transform duration-200 group-hover:scale-[1.03]"
+                      />
+                      {!p.available && (
+                        <Badge
+                          variant="secondary"
+                          className="absolute top-2 left-2 border-border/60 bg-background/90 text-[10px] uppercase"
+                        >
+                          Hidden
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-foreground">
+                        {p.name}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {formatPeso(p.price)} · Sold: {p.sold ?? 0}
+                      </p>
+                    </div>
+                    <p className="flex items-center gap-1.5 text-xs font-semibold text-primary">
+                      <Users className="h-3.5 w-3.5" aria-hidden />
+                      View buyers
+                    </p>
+                  </CardContent>
+                </Card>
+              </button>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function MiniStat({ label, value, icon, valueClass }: {
   label: string;
   value: string;
@@ -359,6 +467,7 @@ function TimeOfDayCard({ stats }: { stats: DashboardStats }) {
 
 export default function Dashboard() {
   const [day, setDay] = React.useState<DayFilter>("all");
+  const [buyersFor, setBuyersFor] = React.useState<Product | null>(null);
 
   const { data, isLoading, isError, refetch, isFetching } = useQuery({
     queryKey: ["booth", "dashboard", day],
@@ -538,6 +647,9 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       )}
+
+      {/* Products — press one to see who bought it */}
+      <ProductsSection onSelect={setBuyersFor} />
 
       {/* Time-of-day demand — always visible, even before any served sale */}
       <TimeOfDayCard stats={data} />
@@ -726,6 +838,14 @@ export default function Dashboard() {
           </Card>
         </>
       )}
+
+      {/* Buyers drill-down — opened by pressing a product card */}
+      <ProductBuyersDialog
+        product={buyersFor}
+        onOpenChange={(open) => {
+          if (!open) setBuyersFor(null);
+        }}
+      />
     </div>
   );
 }

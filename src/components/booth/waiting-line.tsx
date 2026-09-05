@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { CopyEmailButton } from "@/components/shared/copy-email-button";
 import { EmptyState } from "@/components/shared/empty-state";
 import {
   OrderStatusBadge,
@@ -144,6 +145,7 @@ export default function WaitingLine({
                     <p className="flex items-center gap-1.5 truncate text-xs text-muted-foreground">
                       <Mail className="h-3 w-3 shrink-0" aria-hidden />
                       <span className="truncate">{o.customerEmail}</span>
+                      <CopyEmailButton email={o.customerEmail} />
                     </p>
                   )}
                 </div>

@@ -66,6 +66,7 @@ import {
   OrderStatusBadge,
   PaymentStatusBadge,
 } from "@/components/shared/status-badge";
+import { CopyEmailButton } from "@/components/shared/copy-email-button";
 import { apiFetch, ApiError } from "@/lib/api";
 import { parseOrderQr, type QrOrderPayload } from "@/lib/qr";
 import { useToast } from "@/hooks/use-toast";
@@ -885,6 +886,7 @@ export default function Scanner() {
                   <p className="mt-0.5 flex items-center gap-1.5 truncate text-xs text-muted-foreground">
                     <Mail className="h-3.5 w-3.5 shrink-0" aria-hidden />
                     <span className="truncate">{order.customerEmail}</span>
+                    <CopyEmailButton email={order.customerEmail} />
                   </p>
                 )}
               </div>

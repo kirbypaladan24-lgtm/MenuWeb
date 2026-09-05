@@ -141,9 +141,19 @@ export function PaletteMenuButton({
   const { paletteId, palette, setPalette } = usePalette();
   const { toast } = useToast();
 
+  // Deterministic trigger id. Radix derives the trigger id from React's
+  // useId(), which hashes the component's position in the React tree — and
+  // under React 19.2's streaming SSR that hash can be computed differently
+  // on the server vs the client hydration pass (known issue
+  // radix-ui/primitives#3700), surfacing as "attributes of the server
+  // rendered HTML didn't match" hydration errors on these two buttons (they
+  // are the only useId-backed elements in the server-rendered page). Fixed
+  // ids make the server and client markup agree unconditionally.
+  const triggerId = `console-palette-menu-${placement}-trigger`;
+
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
+      <DropdownMenuTrigger asChild id={triggerId}>
         <Button
           variant="outline"
           size={showLabel ? "sm" : "icon"}
@@ -170,6 +180,7 @@ export function PaletteMenuButton({
       <DropdownMenuContent
         side={placement === "sidebar" ? "top" : "bottom"}
         align={placement === "sidebar" ? "start" : "end"}
+        aria-labelledby={triggerId}
         className="w-64"
       >
         <DropdownMenuLabel className="text-xs font-bold uppercase tracking-wider">

@@ -49,6 +49,28 @@ export interface Order {
   completedAt: string | null;
 }
 
+/**
+ * One customer row in a product's buyer list (dashboard drill-down).
+ * Combines the order's customer credentials with THIS product's line-item
+ * data (quantity / temperature / subtotal inside that order).
+ */
+export interface ProductBuyer {
+  orderId: string;
+  customerName: string;
+  customerAlias: string;
+  customerEmail: string;
+  quantity: number; // units of THIS product in that order
+  temperature: Temperature | null;
+  subtotal: number; // ₱ paid for THIS product in that order
+  paymentMethod: PaymentMethod;
+  paymentStatus: PaymentStatus;
+  orderStatus: OrderStatus;
+  orderTotal: number; // whole-order total (context)
+  createdAt: string; // ISO — when the customer placed the order
+  scannedAt: string | null; // ISO — when the QR was scanned at the booth
+  completedAt: string | null; // ISO — when the order was served
+}
+
 export interface BoothSettings {
   boothName: string;
   startDate: string; // ISO

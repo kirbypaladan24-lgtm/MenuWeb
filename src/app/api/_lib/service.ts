@@ -14,6 +14,7 @@ import type {
   PaymentMethod,
   PaymentStatus,
   Product,
+  ProductBuyer,
   ProductStat,
   PublicProduct,
   Temperature,
@@ -245,6 +246,41 @@ export async function listOrders(opts: ListOrdersOptions): Promise<Order[]> {
     return filtered.map(serializeOrder);
   }
   return rows.map(serializeOrder);
+}
+
+/* ------------------------------------------------------------------ */
+/* Product buyers (dashboard drill-down)                                */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Every customer who bought `productId`, newest orders first.
+ * One row per (order, product) pair — an order containing the product
+ * appears once, with the product's own quantity / temperature / subtotal
+ * plus the order's full customer credentials.
+ */
+export async function listProductBuyers(productId: string): Promise<ProductBuyer[]> {
+  const rows = await db.orderItem.findMany({
+    where: { productId },
+    include: { order: true },
+    orderBy: [{ order: { createdAt: "desc" } }, { id: "desc" }],
+  });
+
+  return rows.map((r) => ({
+    orderId: r.order.orderId,
+    customerName: r.order.customerName,
+    customerAlias: r.order.customerAlias,
+    customerEmail: r.order.customerEmail,
+    quantity: r.quantity,
+    temperature: asTemperature(r.temperature),
+    subtotal: r.subtotal,
+    paymentMethod: r.order.paymentMethod as PaymentMethod,
+    paymentStatus: r.order.paymentStatus as PaymentStatus,
+    orderStatus: r.order.orderStatus as OrderStatus,
+    orderTotal: r.order.total,
+    createdAt: r.order.createdAt.toISOString(),
+    scannedAt: r.order.scannedAt ? r.order.scannedAt.toISOString() : null,
+    completedAt: r.order.completedAt ? r.order.completedAt.toISOString() : null,
+  }));
 }
 
 /* ------------------------------------------------------------------ */

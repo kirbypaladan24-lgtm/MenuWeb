@@ -57,6 +57,15 @@ protection. The publishable half is the separate `coffeepp-client` site.
    GCash payments are verified manually at this point.
 4. **Dashboard** — revenue, the **Total Cost box**, net profit, ROI, best
    sellers, HOT vs COLD, GCash vs Booth, daily sales.
+   The **Products** grid lists every product with its photo and name —
+   **press a product to see the customers who bought it**: one table row per
+   order with the call-out name, name, email, quantity, temperature, this
+   item's subtotal, the order total, payment method + status, order status
+   and dates. Search it, filter by status, click any column to sort, or
+   export the current view as CSV.
+   Every email shown anywhere in the console (buyers table, orders,
+   waiting line, scanner, serve confirmation) has a small **copy icon** —
+   one press puts the address on the clipboard.
 5. **Reports** — Excel export (4 sheets) + full JSON backup.
 
 ## Net Profit = Revenue − Total Cost

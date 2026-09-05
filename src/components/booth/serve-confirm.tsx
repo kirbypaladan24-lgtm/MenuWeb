@@ -15,6 +15,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { CopyEmailButton } from "@/components/shared/copy-email-button";
 import { apiFetch, ApiError } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { formatPeso, paymentMethodLabel, shortOrderId } from "@/lib/format";
@@ -91,8 +92,14 @@ export function ServeConfirm({ order, open, onOpenChange, onDone }: ServeConfirm
           {order.customerEmail && (
             <div className="flex items-center justify-between gap-2">
               <span className="text-secondary-foreground">Email</span>
-              <span className="max-w-56 truncate text-secondary-foreground/80">
-                {order.customerEmail}
+              <span className="flex min-w-0 items-center gap-1">
+                <span className="max-w-56 truncate text-secondary-foreground/80">
+                  {order.customerEmail}
+                </span>
+                <CopyEmailButton
+                  email={order.customerEmail}
+                  className="text-secondary-foreground/70 hover:bg-secondary-foreground/10 hover:text-secondary-foreground"
+                />
               </span>
             </div>
           )}

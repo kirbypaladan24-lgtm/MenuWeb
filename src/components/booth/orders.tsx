@@ -46,6 +46,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { CopyEmailButton } from "@/components/shared/copy-email-button";
 import { EmptyState } from "@/components/shared/empty-state";
 import {
   OrderStatusBadge,
@@ -489,6 +490,7 @@ export default function OrdersView() {
                               <p className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
                                 <Mail className="h-3 w-3 shrink-0" aria-hidden />
                                 <span className="max-w-40 truncate">{o.customerEmail}</span>
+                                <CopyEmailButton email={o.customerEmail} />
                               </p>
                             )}
                           </div>
@@ -554,6 +556,7 @@ export default function OrdersView() {
                         <p className="mt-0.5 flex items-center gap-1.5 truncate text-xs text-muted-foreground">
                           <Mail className="h-3 w-3 shrink-0" aria-hidden />
                           <span className="truncate">{o.customerEmail}</span>
+                          <CopyEmailButton email={o.customerEmail} />
                         </p>
                       )}
                     </div>
