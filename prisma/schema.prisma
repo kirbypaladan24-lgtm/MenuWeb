@@ -1,0 +1,67 @@
+// Coffee++ Booth System — Prisma schema
+// Money is stored as INTEGER pesos (₱49 = 49)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Product {
+  id             String      @id // e.g. CF-001
+  name           String
+  description    String      @default("")
+  price          Int
+  image          String      @default("") // path under /images/products/
+  available      Boolean     @default(true)
+  hasTemperature Boolean     @default(false)
+  defaultTemperature String? // "HOT" | "COLD" — fixed serving temp shown to customers when hasTemperature is false
+  category       String      @default("Drinks")
+  sold           Int         @default(0)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+}
+
+model Order {
+  orderId       String      @id // e.g. ORD-0001 (duplicates: ORD-K7F2Q9-2)
+  customerName  String      @default("")
+  customerAlias String      @default("") // call-out name ("how they want to be called")
+  customerEmail String      @default("") // optional at order time
+  items         OrderItem[]
+  total         Int         @default(0)
+  paymentMethod String      @default("GCASH") // GCASH | BOOTH
+  paymentStatus String      @default("UNPAID") // UNPAID | PAID
+  orderStatus   String      @default("PENDING") // PENDING | WAITING | SERVED | ABORTED
+  abortReason   String?
+  createdAt     DateTime    @default(now())
+  scannedAt     DateTime?
+  completedAt   DateTime?
+}
+
+model OrderItem {
+  id          String   @id @default(cuid())
+  orderId     String
+  order       Order    @relation(fields: [orderId], references: [orderId], onDelete: Cascade)
+  productId   String
+  productName String
+  temperature String? // HOT | COLD | null
+  quantity    Int      @default(1)
+  price       Int
+  subtotal    Int
+}
+
+model Booth {
+  id          String   @id @default("main")
+  boothName   String   @default("Coffee++")
+  startDate   DateTime
+  endDate     DateTime
+  totalCost   Int      @default(0) // typed by the admin — money spent running the booth
+  gcashNumber String   @default("")
+  specsNumber String   @default("")
+  contactEmail String  @default("") // shown on the client site's contact card
+  clientSiteUrl String @default("") // deployed customer web menu URL — shown as a QR on the Scanner view
+  updatedAt   DateTime @updatedAt
+}

@@ -1,0 +1,648 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-jakarta);
+  --font-mono: var(--font-geist-mono);
+  --font-display: var(--font-fraunces);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-cream: var(--cream);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+/* Fixed "ink" colors for the always-white printable QR poster (Scanner view).
+   These deliberately do NOT change with [data-palette] or dark palettes: the
+   poster surface is white paper in every palette (and literally paper when
+   printed), so its text must always be dark ink — otherwise dark palettes
+   render light text on the white card and it turns invisible. */
+@theme {
+  --color-poster-ink: oklch(0.26 0.03 45);
+  --color-poster-ink-soft: oklch(0.47 0.03 55);
+  --color-poster-line: oklch(0.86 0.02 78);
+  --color-poster-note: oklch(0.72 0.13 70);
+  --color-poster-note-ink: oklch(0.35 0.07 55);
+}
+
+/* =====================================================================
+   COLOR PALETTES (admin console only)
+   <html data-palette="…"> selects a palette; :root with no attribute is
+   the COZY CREAM default (also the pre-JS fallback). layout.tsx sets the
+   attribute from localStorage before first paint. Staff can switch any
+   time from Settings → Color Palette or the quick switcher in the shell.
+   src/lib/palettes.ts mirrors the ids: cozy, midnight-mint, espresso,
+   matcha, golden-hour, rosewood, charcoal, polar-mint.
+   ===================================================================== */
+
+:root {
+  /* COZY CREAM (default) — warm latte & caramel, rounder corners */
+  --radius: 0.9rem;
+  color-scheme: light;
+
+  --background: oklch(0.977 0.013 85);
+  --foreground: oklch(0.3 0.035 50);
+  --card: oklch(0.998 0.006 85);
+  --card-foreground: oklch(0.3 0.035 50);
+  --popover: oklch(0.998 0.006 85);
+  --popover-foreground: oklch(0.3 0.035 50);
+
+  /* Primary: soft caramel brown */
+  --primary: oklch(0.52 0.09 58);
+  --primary-foreground: oklch(0.975 0.02 85);
+
+  /* Secondary: latte */
+  --secondary: oklch(0.93 0.028 78);
+  --secondary-foreground: oklch(0.38 0.06 52);
+
+  --muted: oklch(0.947 0.014 82);
+  --muted-foreground: oklch(0.55 0.028 62);
+
+  /* Accent: caramel hover */
+  --accent: oklch(0.907 0.05 76);
+  --accent-foreground: oklch(0.34 0.07 52);
+
+  --destructive: oklch(0.55 0.19 28);
+  --border: oklch(0.897 0.022 78);
+  --input: oklch(0.897 0.022 78);
+  --ring: oklch(0.64 0.1 58);
+
+  --success: oklch(0.55 0.13 150);
+  --success-foreground: oklch(0.98 0.01 90);
+  --warning: oklch(0.78 0.14 70);
+  --warning-foreground: oklch(0.3 0.06 55);
+  --cream: oklch(0.955 0.025 82);
+
+  /* Charts: caramel, terracotta, latte, sage, cocoa */
+  --chart-1: oklch(0.52 0.09 58);
+  --chart-2: oklch(0.62 0.15 40);
+  --chart-3: oklch(0.72 0.11 68);
+  --chart-4: oklch(0.6 0.09 135);
+  --chart-5: oklch(0.42 0.07 45);
+
+  --sidebar: oklch(0.958 0.018 82);
+  --sidebar-foreground: oklch(0.3 0.035 50);
+  --sidebar-primary: oklch(0.52 0.09 58);
+  --sidebar-primary-foreground: oklch(0.975 0.02 85);
+  --sidebar-accent: oklch(0.907 0.05 76);
+  --sidebar-accent-foreground: oklch(0.34 0.07 52);
+  --sidebar-border: oklch(0.897 0.022 78);
+  --sidebar-ring: oklch(0.64 0.1 58);
+
+  /* Brand cup is brand-locked #324020 — on light palettes it floats free */
+  --brand-plate-bg: transparent;
+  --brand-plate-pad: 0px;
+}
+
+/* MIDNIGHT MINT — dark green / black / white / soft neon cyan */
+[data-palette="midnight-mint"] {
+  --radius: 0.75rem;
+  color-scheme: dark;
+
+  --background: oklch(0.155 0.018 168);
+  --foreground: oklch(0.96 0.012 165);
+  --card: oklch(0.205 0.028 170);
+  --card-foreground: oklch(0.96 0.012 165);
+  --popover: oklch(0.21 0.03 170);
+  --popover-foreground: oklch(0.96 0.012 165);
+
+  /* Primary: soft neon cyan */
+  --primary: oklch(0.83 0.125 180);
+  --primary-foreground: oklch(0.17 0.035 170);
+
+  --secondary: oklch(0.26 0.032 172);
+  --secondary-foreground: oklch(0.86 0.07 172);
+
+  --muted: oklch(0.25 0.028 170);
+  --muted-foreground: oklch(0.66 0.04 172);
+
+  --accent: oklch(0.29 0.05 174);
+  --accent-foreground: oklch(0.88 0.08 175);
+
+  --destructive: oklch(0.63 0.19 26);
+  --border: oklch(0.31 0.038 172);
+  --input: oklch(0.31 0.038 172);
+  --ring: oklch(0.76 0.115 180);
+
+  --success: oklch(0.72 0.14 155);
+  --success-foreground: oklch(0.16 0.04 155);
+  --warning: oklch(0.8 0.13 80);
+  /* Light amber for dark palettes — used as text on bg-warning/10–20 tints */
+  --warning-foreground: oklch(0.87 0.09 80);
+  --cream: oklch(0.235 0.03 168);
+
+  /* Charts: cyan, mint, forest, pale mint, teal */
+  --chart-1: oklch(0.83 0.125 180);
+  --chart-2: oklch(0.7 0.12 160);
+  --chart-3: oklch(0.45 0.09 155);
+  --chart-4: oklch(0.9 0.05 170);
+  --chart-5: oklch(0.55 0.08 185);
+
+  --sidebar: oklch(0.175 0.022 168);
+  --sidebar-foreground: oklch(0.96 0.012 165);
+  --sidebar-primary: oklch(0.83 0.125 180);
+  --sidebar-primary-foreground: oklch(0.17 0.035 170);
+  --sidebar-accent: oklch(0.29 0.05 174);
+  --sidebar-accent-foreground: oklch(0.88 0.08 175);
+  --sidebar-border: oklch(0.31 0.038 172);
+  --sidebar-ring: oklch(0.76 0.115 180);
+
+  /* Cream chip behind the brand-locked #324020 cup so it stays visible */
+  --brand-plate-bg: oklch(0.95 0.03 85);
+  --brand-plate-pad: 6px;
+  --brand-mark-plus: oklch(0.88 0.06 80);
+}
+
+/* ESPRESSO CLASSIC — the original Coffee++ light theme */
+[data-palette="espresso"] {
+  --radius: 0.75rem;
+  color-scheme: light;
+
+  --background: oklch(0.982 0.008 84);
+  --foreground: oklch(0.26 0.03 45);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.26 0.03 45);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.26 0.03 45);
+
+  /* Primary: espresso brown */
+  --primary: oklch(0.44 0.09 45);
+  --primary-foreground: oklch(0.97 0.015 85);
+
+  /* Secondary: latte */
+  --secondary: oklch(0.93 0.025 78);
+  --secondary-foreground: oklch(0.36 0.06 50);
+
+  --muted: oklch(0.95 0.012 80);
+  --muted-foreground: oklch(0.54 0.025 60);
+
+  /* Accent: caramel hover */
+  --accent: oklch(0.9 0.045 75);
+  --accent-foreground: oklch(0.32 0.07 50);
+
+  --destructive: oklch(0.55 0.19 28);
+  --border: oklch(0.885 0.02 78);
+  --input: oklch(0.885 0.02 78);
+  --ring: oklch(0.62 0.1 55);
+
+  --success: oklch(0.55 0.13 150);
+  --success-foreground: oklch(0.98 0.01 90);
+  --warning: oklch(0.75 0.14 70);
+  --warning-foreground: oklch(0.3 0.06 55);
+  --cream: oklch(0.955 0.02 82);
+
+  /* Charts: coffee, caramel, matcha, tan, terracotta */
+  --chart-1: oklch(0.45 0.09 45);
+  --chart-2: oklch(0.72 0.12 65);
+  --chart-3: oklch(0.62 0.1 135);
+  --chart-4: oklch(0.82 0.07 80);
+  --chart-5: oklch(0.62 0.15 40);
+
+  --sidebar: oklch(0.97 0.01 82);
+  --sidebar-foreground: oklch(0.26 0.03 45);
+  --sidebar-primary: oklch(0.44 0.09 45);
+  --sidebar-primary-foreground: oklch(0.97 0.015 85);
+  --sidebar-accent: oklch(0.9 0.045 75);
+  --sidebar-accent-foreground: oklch(0.32 0.07 50);
+  --sidebar-border: oklch(0.885 0.02 78);
+  --sidebar-ring: oklch(0.62 0.1 55);
+
+  --brand-plate-bg: transparent;
+  --brand-plate-pad: 0px;
+}
+
+/* MATCHA LATTE — soft green paper, deep matcha greens */
+[data-palette="matcha"] {
+  --radius: 0.9rem;
+  color-scheme: light;
+
+  --background: oklch(0.972 0.014 115);
+  --foreground: oklch(0.3 0.045 145);
+  --card: oklch(0.995 0.007 115);
+  --card-foreground: oklch(0.3 0.045 145);
+  --popover: oklch(0.995 0.007 115);
+  --popover-foreground: oklch(0.3 0.045 145);
+
+  /* Primary: matcha green */
+  --primary: oklch(0.44 0.075 140);
+  --primary-foreground: oklch(0.975 0.02 115);
+
+  --secondary: oklch(0.93 0.03 115);
+  --secondary-foreground: oklch(0.35 0.06 140);
+
+  --muted: oklch(0.945 0.015 118);
+  --muted-foreground: oklch(0.54 0.04 128);
+
+  --accent: oklch(0.905 0.055 120);
+  --accent-foreground: oklch(0.33 0.06 140);
+
+  --destructive: oklch(0.55 0.19 28);
+  --border: oklch(0.895 0.028 120);
+  --input: oklch(0.895 0.028 120);
+  --ring: oklch(0.6 0.09 140);
+
+  --success: oklch(0.55 0.13 150);
+  --success-foreground: oklch(0.98 0.01 130);
+  --warning: oklch(0.78 0.14 70);
+  --warning-foreground: oklch(0.3 0.06 55);
+  --cream: oklch(0.95 0.03 118);
+
+  /* Charts: matcha, cocoa, cream green, terracotta, olive */
+  --chart-1: oklch(0.5 0.09 135);
+  --chart-2: oklch(0.42 0.07 45);
+  --chart-3: oklch(0.78 0.08 105);
+  --chart-4: oklch(0.62 0.14 40);
+  --chart-5: oklch(0.6 0.08 100);
+
+  --sidebar: oklch(0.955 0.02 118);
+  --sidebar-foreground: oklch(0.3 0.045 145);
+  --sidebar-primary: oklch(0.44 0.075 140);
+  --sidebar-primary-foreground: oklch(0.975 0.02 115);
+  --sidebar-accent: oklch(0.905 0.055 120);
+  --sidebar-accent-foreground: oklch(0.33 0.06 140);
+  --sidebar-border: oklch(0.895 0.028 120);
+  --sidebar-ring: oklch(0.6 0.09 140);
+
+  --brand-plate-bg: transparent;
+  --brand-plate-pad: 0px;
+}
+
+/* GOLDEN HOUR — espresso night with honey amber */
+[data-palette="golden-hour"] {
+  --radius: 0.75rem;
+  color-scheme: dark;
+
+  --background: oklch(0.185 0.018 55);
+  --foreground: oklch(0.93 0.02 80);
+  --card: oklch(0.245 0.028 55);
+  --card-foreground: oklch(0.93 0.02 80);
+  --popover: oklch(0.25 0.03 55);
+  --popover-foreground: oklch(0.93 0.02 80);
+
+  /* Primary: honey amber */
+  --primary: oklch(0.78 0.13 75);
+  --primary-foreground: oklch(0.23 0.05 55);
+
+  --secondary: oklch(0.3 0.035 60);
+  --secondary-foreground: oklch(0.88 0.04 75);
+
+  --muted: oklch(0.29 0.028 60);
+  --muted-foreground: oklch(0.67 0.04 70);
+
+  --accent: oklch(0.33 0.055 65);
+  --accent-foreground: oklch(0.9 0.06 75);
+
+  --destructive: oklch(0.63 0.18 26);
+  --border: oklch(0.36 0.035 60);
+  --input: oklch(0.36 0.035 60);
+  --ring: oklch(0.74 0.11 72);
+
+  --success: oklch(0.68 0.13 150);
+  --success-foreground: oklch(0.16 0.03 150);
+  --warning: oklch(0.82 0.13 78);
+  /* Light honey — dark-on-dark text fix for this dark palette */
+  --warning-foreground: oklch(0.9 0.1 78);
+  --cream: oklch(0.27 0.03 58);
+
+  /* Charts: honey, caramel, cream, rust, cocoa */
+  --chart-1: oklch(0.78 0.13 75);
+  --chart-2: oklch(0.68 0.12 60);
+  --chart-3: oklch(0.88 0.07 80);
+  --chart-4: oklch(0.62 0.15 40);
+  --chart-5: oklch(0.48 0.08 45);
+
+  --sidebar: oklch(0.21 0.022 55);
+  --sidebar-foreground: oklch(0.93 0.02 80);
+  --sidebar-primary: oklch(0.78 0.13 75);
+  --sidebar-primary-foreground: oklch(0.23 0.05 55);
+  --sidebar-accent: oklch(0.33 0.055 65);
+  --sidebar-accent-foreground: oklch(0.9 0.06 75);
+  --sidebar-border: oklch(0.36 0.035 60);
+  --sidebar-ring: oklch(0.74 0.11 72);
+
+  --brand-plate-bg: oklch(0.94 0.03 85);
+  --brand-plate-pad: 6px;
+  --brand-mark-plus: oklch(0.88 0.06 80);
+}
+
+/* ROSEWOOD — blush paper, dusty rose & plum inks */
+[data-palette="rosewood"] {
+  --radius: 0.9rem;
+  color-scheme: light;
+
+  --background: oklch(0.973 0.013 22);
+  --foreground: oklch(0.32 0.05 25);
+  --card: oklch(0.995 0.007 22);
+  --card-foreground: oklch(0.32 0.05 25);
+  --popover: oklch(0.995 0.007 22);
+  --popover-foreground: oklch(0.32 0.05 25);
+
+  /* Primary: dusty rosewood */
+  --primary: oklch(0.5 0.11 20);
+  --primary-foreground: oklch(0.975 0.018 30);
+
+  --secondary: oklch(0.93 0.028 25);
+  --secondary-foreground: oklch(0.37 0.07 25);
+
+  --muted: oklch(0.945 0.015 25);
+  --muted-foreground: oklch(0.55 0.04 32);
+
+  --accent: oklch(0.905 0.05 25);
+  --accent-foreground: oklch(0.35 0.07 25);
+
+  --destructive: oklch(0.55 0.19 28);
+  --border: oklch(0.895 0.025 25);
+  --input: oklch(0.895 0.025 25);
+  --ring: oklch(0.62 0.1 25);
+
+  --success: oklch(0.55 0.13 150);
+  --success-foreground: oklch(0.98 0.01 140);
+  --warning: oklch(0.78 0.14 70);
+  --warning-foreground: oklch(0.3 0.06 55);
+  --cream: oklch(0.953 0.028 25);
+
+  /* Charts: rosewood, plum, sand, wine, sage */
+  --chart-1: oklch(0.5 0.11 20);
+  --chart-2: oklch(0.45 0.1 350);
+  --chart-3: oklch(0.75 0.08 70);
+  --chart-4: oklch(0.4 0.12 15);
+  --chart-5: oklch(0.6 0.08 135);
+
+  --sidebar: oklch(0.956 0.02 25);
+  --sidebar-foreground: oklch(0.32 0.05 25);
+  --sidebar-primary: oklch(0.5 0.11 20);
+  --sidebar-primary-foreground: oklch(0.975 0.018 30);
+  --sidebar-accent: oklch(0.905 0.05 25);
+  --sidebar-accent-foreground: oklch(0.35 0.07 25);
+  --sidebar-border: oklch(0.895 0.025 25);
+  --sidebar-ring: oklch(0.62 0.1 25);
+
+  --brand-plate-bg: transparent;
+  --brand-plate-pad: 0px;
+}
+
+/* CHARCOAL NIGHT — neutral graphite with a warm amber spark */
+[data-palette="charcoal"] {
+  --radius: 0.75rem;
+  color-scheme: dark;
+
+  --background: oklch(0.195 0.008 60);
+  --foreground: oklch(0.92 0.01 75);
+  --card: oklch(0.255 0.01 60);
+  --card-foreground: oklch(0.92 0.01 75);
+  --popover: oklch(0.26 0.012 60);
+  --popover-foreground: oklch(0.92 0.01 75);
+
+  /* Primary: warm amber spark */
+  --primary: oklch(0.75 0.115 70);
+  --primary-foreground: oklch(0.22 0.04 60);
+
+  --secondary: oklch(0.31 0.012 60);
+  --secondary-foreground: oklch(0.87 0.02 72);
+
+  --muted: oklch(0.295 0.01 60);
+  --muted-foreground: oklch(0.66 0.018 70);
+
+  --accent: oklch(0.335 0.02 64);
+  --accent-foreground: oklch(0.9 0.02 74);
+
+  --destructive: oklch(0.63 0.18 26);
+  --border: oklch(0.36 0.012 60);
+  --input: oklch(0.36 0.012 60);
+  --ring: oklch(0.7 0.1 70);
+
+  --success: oklch(0.68 0.13 150);
+  --success-foreground: oklch(0.16 0.03 150);
+  --warning: oklch(0.8 0.13 78);
+  /* Light amber — dark-on-dark text fix for this dark palette */
+  --warning-foreground: oklch(0.87 0.09 78);
+  --cream: oklch(0.27 0.012 60);
+
+  /* Charts: amber, ivory, taupe, rust, sage */
+  --chart-1: oklch(0.75 0.115 70);
+  --chart-2: oklch(0.85 0.02 78);
+  --chart-3: oklch(0.55 0.03 60);
+  --chart-4: oklch(0.62 0.15 40);
+  --chart-5: oklch(0.55 0.08 135);
+
+  --sidebar: oklch(0.22 0.008 60);
+  --sidebar-foreground: oklch(0.92 0.01 75);
+  --sidebar-primary: oklch(0.75 0.115 70);
+  --sidebar-primary-foreground: oklch(0.22 0.04 60);
+  --sidebar-accent: oklch(0.335 0.02 64);
+  --sidebar-accent-foreground: oklch(0.9 0.02 74);
+  --sidebar-border: oklch(0.36 0.012 60);
+  --sidebar-ring: oklch(0.7 0.1 70);
+
+  --brand-plate-bg: oklch(0.94 0.02 80);
+  --brand-plate-pad: 6px;
+  --brand-mark-plus: oklch(0.88 0.05 80);
+}
+
+/* POLAR MINT — crisp white & mint, pine green + soft cyan accents */
+[data-palette="polar-mint"] {
+  --radius: 0.9rem;
+  color-scheme: light;
+
+  --background: oklch(0.982 0.006 178);
+  --foreground: oklch(0.29 0.03 172);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.29 0.03 172);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.29 0.03 172);
+
+  /* Primary: deep pine green */
+  --primary: oklch(0.42 0.075 172);
+  --primary-foreground: oklch(0.975 0.012 178);
+
+  --secondary: oklch(0.93 0.024 176);
+  --secondary-foreground: oklch(0.34 0.05 172);
+
+  --muted: oklch(0.948 0.012 178);
+  --muted-foreground: oklch(0.52 0.035 176);
+
+  /* Accent: soft cyan hover */
+  --accent: oklch(0.9 0.065 178);
+  --accent-foreground: oklch(0.31 0.055 172);
+
+  --destructive: oklch(0.55 0.19 28);
+  --border: oklch(0.895 0.022 178);
+  --input: oklch(0.895 0.022 178);
+  --ring: oklch(0.62 0.1 178);
+
+  --success: oklch(0.55 0.13 150);
+  --success-foreground: oklch(0.98 0.01 160);
+  --warning: oklch(0.78 0.14 70);
+  --warning-foreground: oklch(0.3 0.06 55);
+  --cream: oklch(0.95 0.025 176);
+
+  /* Charts: pine, cyan, mint, slate green, teal */
+  --chart-1: oklch(0.42 0.075 172);
+  --chart-2: oklch(0.72 0.11 182);
+  --chart-3: oklch(0.8 0.08 165);
+  --chart-4: oklch(0.55 0.05 170);
+  --chart-5: oklch(0.4 0.06 185);
+
+  --sidebar: oklch(0.955 0.014 178);
+  --sidebar-foreground: oklch(0.29 0.03 172);
+  --sidebar-primary: oklch(0.42 0.075 172);
+  --sidebar-primary-foreground: oklch(0.975 0.012 178);
+  --sidebar-accent: oklch(0.9 0.065 178);
+  --sidebar-accent-foreground: oklch(0.31 0.055 172);
+  --sidebar-border: oklch(0.895 0.022 178);
+  --sidebar-ring: oklch(0.62 0.1 178);
+
+  --brand-plate-bg: transparent;
+  --brand-plate-pad: 0px;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "ss01";
+  }
+  .font-display {
+    font-family: var(--font-fraunces), Georgia, serif;
+  }
+}
+
+/*
+ * Brand-mark plate — the cup stays BRAND-LOCKED #324020 (see brand-logo.tsx);
+ * dark palettes give it a cream plate (CSS-var driven) so it never disappears.
+ * On light palettes the vars resolve to transparent / 0px — zero visual change.
+ */
+.brand-mark {
+  background: var(--brand-plate-bg, transparent);
+  border-radius: 999px;
+  padding: var(--brand-plate-pad, 0px);
+  box-sizing: border-box;
+}
+
+/* Subtle paper-grain texture for hero surfaces (very light, no clutter) */
+.bg-coffee-grain {
+  background-image: radial-gradient(
+      ellipse 80% 50% at 50% -10%,
+      color-mix(in oklab, var(--primary) 7%, transparent),
+      transparent
+    ),
+    repeating-radial-gradient(
+      circle at 12% 88%,
+      color-mix(in oklab, var(--primary) 3%, transparent) 0,
+      transparent 6px
+    );
+}
+
+/* Thin custom scrollbar for long lists (waiting line, orders) */
+.scroll-thin {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklab, var(--primary) 35%, transparent) transparent;
+}
+.scroll-thin::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.scroll-thin::-webkit-scrollbar-thumb {
+  background: color-mix(in oklab, var(--primary) 35%, transparent);
+  border-radius: 999px;
+}
+.scroll-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Keyboard-focus visibility for accessibility */
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: white;
+  }
+  /* Print ONLY the customer web-menu QR poster (Scanner view).
+     Everything is hidden (visibility keeps the fixed poster paintable),
+     and the document is collapsed to exactly one page. */
+  body * {
+    visibility: hidden;
+  }
+  .print-qr-area,
+  .print-qr-area * {
+    visibility: visible;
+  }
+  html,
+  body,
+  body > * {
+    height: 0 !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+  }
+  .print-qr-area {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    border: none;
+    border-radius: 0;
+    padding: 0;
+  }
+  .print-qr-area img {
+    width: 320px !important;
+    height: 320px !important;
+  }
+  .print-qr-area .font-display {
+    font-size: 2rem;
+  }
+  /* Paper is always light — force ink regardless of the active palette. */
+  .print-qr-area,
+  .print-qr-area * {
+    background: white !important;
+    color: #1b1b16 !important;
+    border-color: #d8d2c4 !important;
+  }
+}
