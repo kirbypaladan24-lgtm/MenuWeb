@@ -73,8 +73,9 @@ export default function WaitingLine({
   };
 
   return (
-    <div>
+    <div className="flex min-h-0 flex-1 flex-col">
       <ViewHeader
+        className="shrink-0"
         title="Waiting Line"
         description="First in, first out — orders line up in scan order and are served fairly. Refreshes automatically."
         action={
@@ -121,7 +122,12 @@ export default function WaitingLine({
           }
         />
       ) : (
-        <div className="max-h-[70vh] space-y-3 overflow-y-auto pr-1 scroll-thin">
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1 scroll-thin">
+          {/* Flex-fills ALL the space left below the header — the scroll
+              track runs to the very bottom of the usable screen (the fixed
+              bottom-nav's top edge on mobile, the window bottom on desktop),
+              whatever the screen size and however the header wraps: a dead
+              gap below the list is geometrically impossible. */}
           {waiting.map((o, i) => {
             const position = i + 1; // queue index: 1 = first in, first out
             const isFirst = position === 1;

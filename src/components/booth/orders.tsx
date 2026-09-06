@@ -367,8 +367,9 @@ export default function OrdersView() {
   }
 
   return (
-    <div>
+    <div className="flex min-h-0 flex-1 flex-col">
       <ViewHeader
+        className="shrink-0"
         title="Orders"
         description="Every order across the booth run — newest first."
         action={
@@ -380,9 +381,11 @@ export default function OrdersView() {
         }
       />
 
-      <div className="space-y-3">
-        {/* Status + day filters */}
-        <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
+      <div className="flex min-h-0 flex-1 flex-col space-y-3">
+        {/* Filter row + tabs stay their natural height; the table/list
+            below flex-fills the rest so its scroll track runs to the very
+            bottom of the usable screen at any window size. */}
+        <div className="flex shrink-0 flex-col gap-2 lg:flex-row lg:items-center">
           <Tabs
             value={status}
             onValueChange={(v) => setStatus(v as StatusFilter)}
@@ -411,7 +414,7 @@ export default function OrdersView() {
           </div>
         </div>
 
-        <Tabs value={day} onValueChange={(v) => setDay(v as DayFilter)}>
+        <Tabs value={day} onValueChange={(v) => setDay(v as DayFilter)} className="shrink-0">
           <TabsList>
             <TabsTrigger value="all" className="text-xs sm:text-sm">
               All Days
@@ -452,9 +455,12 @@ export default function OrdersView() {
           />
         ) : (
           <>
-            {/* Desktop table */}
-            <Card className="hidden gap-0 py-0 md:block">
-              <div className="max-h-[70vh] overflow-y-auto scroll-thin">
+            {/* Desktop table — md:flex + min-h-0 flex-1 so the table
+                stretches to fill the column; its inner scroll track runs to
+                the window bottom (mb-0 kills the space-y margin so the card
+                itself reaches the bottom edge — no dead gap at any size). */}
+            <Card className="mb-0 hidden min-h-0 flex-1 gap-0 py-0 md:flex">
+              <div className="min-h-0 flex-1 overflow-y-auto scroll-thin">
                 <Table>
                   <TableHeader className="sticky top-0 z-10 bg-card">
                     <TableRow className="hover:bg-transparent">
@@ -532,8 +538,9 @@ export default function OrdersView() {
               </div>
             </Card>
 
-            {/* Mobile cards */}
-            <div className="max-h-[70vh] space-y-2 overflow-y-auto pr-1 scroll-thin md:hidden">
+            {/* Mobile cards — flex-fills the column down to the bottom
+                nav's top edge: the scroll track runs to the very bottom. */}
+            <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1 scroll-thin md:hidden">
               {orders.map((o) => (
                 <Card key={o.orderId} className="gap-2 py-3">
                   <CardContent className="space-y-2 px-4">

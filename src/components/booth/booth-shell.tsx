@@ -165,8 +165,33 @@ export default function BoothShell({ view, onNavigate }: BoothShellProps) {
 
       {/* Main content */}
       <main className="min-w-0 flex-1">
-        <div className="mx-auto w-full max-w-6xl p-4 pb-24 sm:p-6 md:pb-8">
-          <div key={view} className="animate-in fade-in slide-in-from-bottom-1 duration-200">
+        {/*
+          List views (waiting line, orders) lock their column to the exact
+          screen height: the header sits at the top and the scrollable list
+          FLEX-FILLS every remaining pixel, so the scroll track always runs
+          to the very bottom of the usable screen (bottom-nav top edge on
+          mobile, window bottom on desktop) — a dead gap below the list is
+          geometrically impossible at any screen size. Mobile reserves the
+          3.5rem sticky top bar + 4rem fixed bottom nav (+ safe inset);
+          desktop has neither, so the column is the full viewport. Other
+          views keep normal page scrolling.
+        */}
+        <div
+          className={cn(
+            "mx-auto w-full max-w-6xl",
+            view === "waiting" || view === "orders"
+              ? "flex h-[calc(100dvh-7.625rem-env(safe-area-inset-bottom))] flex-col p-4 pb-0 sm:p-6 sm:pb-0 md:h-dvh md:p-6 md:pb-0"
+              : "p-4 pb-24 sm:p-6 md:pb-8"
+          )}
+        >
+          <div
+            key={view}
+            className={cn(
+              "animate-in fade-in slide-in-from-bottom-1 duration-200",
+              (view === "waiting" || view === "orders") &&
+                "flex min-h-0 flex-1 flex-col"
+            )}
+          >
             {renderView(view, onNavigate)}
           </div>
         </div>
