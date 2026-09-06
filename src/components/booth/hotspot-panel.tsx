@@ -4,8 +4,9 @@
 //
 // Poor laptop cameras (glare, autofocus, lighting) make customer Order QRs
 // hard to read, so this panel turns the admin laptop into the local server:
-//   1. "Open Hotspot" hosts a Wi-Fi hotspot (auto via NetworkManager on
-//      Linux, otherwise short manual steps for Windows/macOS);
+//   1. "Open Hotspot" hosts a REAL Wi-Fi hotspot on this laptop (auto:
+//      NetworkManager on Linux · Windows Mobile Hotspot / Hosted Network
+//      on Windows — it pops up in other devices' Wi-Fi lists);
 //   2. a separate phone scanner app joins that Wi-Fi, scans customer Order
 //      QRs with the phone camera and POSTs the decoded text to
 //      /api/hotspot/scan on THIS laptop — fully offline, no internet;
@@ -15,9 +16,14 @@
 //      just a sharper pair of eyes. The camera scanner keeps working the
 //      whole time.
 //
+// The open panel is deliberately BIG: it owns the full-width strip under
+// the scanner pair and shows two large QR codes — "join the Wi-Fi" (the
+// phone's camera app reads it and connects) and "the scanner server link"
+// (the web link the phone app talks to).
+//
 // The panel polls /api/hotspot/status (withEvents=1) every 2s while open,
-// remembers the booth's Wi-Fi name/password in localStorage, and shows a
-// Wi-Fi join QR so the phone's own camera app can join the network.
+// remembers the booth's Wi-Fi name/password in localStorage, and collapses
+// into a one-row affordance when the hotspot is closed.
 
 import * as React from "react";
 import QRCode from "qrcode";
@@ -30,6 +36,7 @@ import {
   Clock,
   Copy,
   Loader2,
+  QrCode as QrCodeIcon,
   Radio,
   RefreshCw,
   SearchX,
@@ -154,6 +161,41 @@ function CopyValueButton({ value, ariaLabel }: { value: string; ariaLabel: strin
   );
 }
 
+/** One of the two big square QR tiles (Wi-Fi join / server link). */
+function QrTile({
+  src,
+  alt,
+  label,
+}: {
+  src: string | null;
+  alt: string;
+  label: string;
+}) {
+  return (
+    <div className="flex flex-col items-center gap-2">
+      <div className="rounded-xl bg-white p-2.5 shadow-sm">
+        {src ? (
+          <Image
+            src={src}
+            alt={alt}
+            width={384}
+            height={384}
+            className="h-44 w-44 md:h-52 md:w-52"
+            unoptimized
+          />
+        ) : (
+          <div className="flex h-44 w-44 items-center justify-center rounded-lg border-2 border-dashed border-border text-xs text-muted-foreground md:h-52 md:w-52">
+            Generating QR…
+          </div>
+        )}
+      </div>
+      <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        {label}
+      </p>
+    </div>
+  );
+}
+
 function describeEvent(ev: HotspotScanEvent): string {
   const order = ev.order;
   switch (ev.outcome) {
@@ -252,7 +294,8 @@ export function HotspotPanel({ onScanEvent }: HotspotPanelProps) {
   const [customize, setCustomize] = React.useState(false);
   const [ssid, setSsid] = React.useState(DEFAULT_SSID);
   const [password, setPassword] = React.useState("");
-  const [qrSrc, setQrSrc] = React.useState<string | null>(null);
+  const [wifiQrSrc, setWifiQrSrc] = React.useState<string | null>(null);
+  const [serverQrSrc, setServerQrSrc] = React.useState<string | null>(null);
 
   // Load the booth's remembered Wi-Fi values (or generate a fresh password).
   React.useEffect(() => {
@@ -355,29 +398,43 @@ export function HotspotPanel({ onScanEvent }: HotspotPanelProps) {
     };
   }, [session?.active]);
 
-  // Wi-Fi join QR for the current session credentials.
+  // The two big QRs: (1) join-the-Wi-Fi, (2) the scanner server web link.
   React.useEffect(() => {
     if (!session?.active) {
-      setQrSrc(null);
+      setWifiQrSrc(null);
+      setServerQrSrc(null);
       return;
     }
     let cancelled = false;
-    QRCode.toDataURL(wifiQrPayload(session.ssid, session.password), {
+    const opts = {
       width: 512,
       margin: 1,
-      errorCorrectionLevel: "M",
+      errorCorrectionLevel: "M" as const,
       color: { dark: "#000000FF", light: "#FFFFFFFF" },
-    })
+    };
+    QRCode.toDataURL(wifiQrPayload(session.ssid, session.password), opts)
       .then((src) => {
-        if (!cancelled) setQrSrc(src);
+        if (!cancelled) setWifiQrSrc(src);
       })
       .catch(() => {
-        if (!cancelled) setQrSrc(null);
+        if (!cancelled) setWifiQrSrc(null);
       });
+    const serverUrl = session.urls[0] ?? "";
+    if (serverUrl !== "") {
+      QRCode.toDataURL(serverUrl, opts)
+        .then((src) => {
+          if (!cancelled) setServerQrSrc(src);
+        })
+        .catch(() => {
+          if (!cancelled) setServerQrSrc(null);
+        });
+    } else {
+      setServerQrSrc(null);
+    }
     return () => {
       cancelled = true;
     };
-  }, [session?.active, session?.ssid, session?.password]);
+  }, [session?.active, session?.ssid, session?.password, session?.urls]);
 
   async function openHotspot() {
     if (busy !== null) return;
@@ -396,8 +453,8 @@ export function HotspotPanel({ onScanEvent }: HotspotPanelProps) {
           title: "✓ Hotspot open",
           description:
             res.hotspot.mode === "auto"
-              ? `Wi-Fi “${res.hotspot.ssid}” is broadcasting — join it on the scanner phone.`
-              : `Session started — follow the Wi-Fi setup steps, then join the phone to “${res.hotspot.ssid}”.`,
+              ? `Wi-Fi “${res.hotspot.ssid}” is broadcasting — it already pops up in nearby devices' Wi-Fi lists.`
+              : `Session started — turn the laptop's Wi-Fi hotspot on (steps inside), then join “${res.hotspot.ssid}” on the phone.`,
         });
       }
     } catch (err) {
@@ -436,23 +493,51 @@ export function HotspotPanel({ onScanEvent }: HotspotPanelProps) {
   if (!session?.active) {
     return (
       <Card className="w-full">
-        <CardContent className="p-4">
-          <div className="flex items-start gap-2.5">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-              <Wifi className="h-5 w-5" aria-hidden />
+        <CardContent className="p-4 sm:p-5">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-6">
+            <div className="flex min-w-0 flex-1 items-start gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <Wifi className="h-5.5 w-5.5" aria-hidden />
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-bold text-foreground">Scan with a phone</p>
+                <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+                  Camera struggling with glare or tiny QRs? Turn this laptop&apos;s Wi-Fi
+                  hotspot on — it pops up on the scanner phone — and let the phone camera
+                  do the scanning. Fully offline; this laptop stays in charge.
+                </p>
+              </div>
             </div>
-            <div className="min-w-0">
-              <p className="text-sm font-bold text-foreground">Scan with a phone</p>
-              <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
-                Camera struggling with glare or tiny QRs? Turn this laptop into a Wi-Fi
-                hotspot and let a phone camera do the scanning — fully offline, this
-                laptop stays in charge.
-              </p>
+            <div className="flex shrink-0 items-center gap-2">
+              <Button
+                type="button"
+                className="h-12 flex-1 px-6 text-base font-semibold sm:flex-none"
+                onClick={() => void openHotspot()}
+                disabled={busy !== null || !canOpen}
+              >
+                {busy === "open" ? (
+                  <Loader2 className="animate-spin" aria-hidden />
+                ) : (
+                  <Wifi aria-hidden />
+                )}
+                Open Hotspot
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                className="h-12 w-12 shrink-0"
+                onClick={() => setCustomize((c) => !c)}
+                aria-expanded={customize}
+                aria-label="Customize the Wi-Fi name and password"
+                title="Customize the Wi-Fi name and password"
+              >
+                <Settings2 aria-hidden />
+              </Button>
             </div>
           </div>
 
           {customize && (
-            <div className="mt-3 space-y-3 rounded-lg border bg-secondary/40 p-3">
+            <div className="mt-4 space-y-3 rounded-lg border bg-secondary/40 p-3">
               <div className="grid gap-1.5">
                 <label
                   htmlFor="hotspot-ssid"
@@ -508,33 +593,7 @@ export function HotspotPanel({ onScanEvent }: HotspotPanelProps) {
             </div>
           )}
 
-          <div className="mt-3 flex items-center gap-2">
-            <Button
-              type="button"
-              className="h-11 flex-1 text-base font-semibold"
-              onClick={() => void openHotspot()}
-              disabled={busy !== null || !canOpen}
-            >
-              {busy === "open" ? (
-                <Loader2 className="animate-spin" aria-hidden />
-              ) : (
-                <Wifi aria-hidden />
-              )}
-              Open Hotspot
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              className="h-11 w-11 shrink-0"
-              onClick={() => setCustomize((c) => !c)}
-              aria-expanded={customize}
-              aria-label="Customize the Wi-Fi name and password"
-              title="Customize the Wi-Fi name and password"
-            >
-              <Settings2 aria-hidden />
-            </Button>
-          </div>
-          <p className="mt-1.5 text-center text-[11px] text-muted-foreground">
+          <p className="mt-3 text-center text-[11px] text-muted-foreground">
             Wi-Fi: <span className="font-semibold">{ssid}</span> ·{" "}
             <span className="font-mono">{password}</span> — tap ⚙ to change
           </p>
@@ -547,116 +606,147 @@ export function HotspotPanel({ onScanEvent }: HotspotPanelProps) {
   const connectedPhones = phones.filter(
     (p) => Date.now() - Date.parse(p.lastSeen) < 10_000
   );
+  const primaryUrl = session.urls[0] ?? null;
+  const otherUrls = session.urls.slice(1);
 
   return (
     <Card className="w-full border-primary/30">
       <CardHeader className="pb-3">
-        <div className="flex items-start gap-2.5">
-          <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-            <Wifi className="h-5 w-5" aria-hidden />
-            <span
-              className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 animate-pulse rounded-full bg-success"
-              aria-hidden
-            />
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex min-w-0 items-start gap-3">
+            <div className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <Wifi className="h-5.5 w-5.5" aria-hidden />
+              <span
+                className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 animate-pulse rounded-full bg-success"
+                aria-hidden
+              />
+            </div>
+            <div className="min-w-0">
+              <CardTitle className="text-base">Hotspot active</CardTitle>
+              <CardDescription>
+                Broadcasting since {formatTime(session.openedAt)} · the camera scanner
+                keeps working
+              </CardDescription>
+            </div>
           </div>
-          <div className="min-w-0">
-            <CardTitle className="text-base">Hotspot active</CardTitle>
-            <CardDescription>
-              Open since {formatTime(session.openedAt)} · the camera scanner keeps
-              working
-            </CardDescription>
-          </div>
-        </div>
-        <div className="flex flex-wrap gap-1.5 pt-1">
-          <Badge variant={session.mode === "auto" ? "default" : "secondary"}>
-            {session.mode === "auto" ? "Wi-Fi auto-configured" : "Manual Wi-Fi setup"}
-          </Badge>
-          {connectedPhones.length > 0 && (
-            <Badge variant="outline" className="gap-1.5">
-              <span className="h-2 w-2 rounded-full bg-success" aria-hidden />
-              {connectedPhones.length} phone{connectedPhones.length > 1 ? "s" : ""} connected
+          <div className="flex flex-wrap gap-1.5">
+            <Badge variant={session.mode === "auto" ? "default" : "secondary"}>
+              {session.mode === "auto"
+                ? `Hotspot on · ${session.autoMethod ?? "auto-configured"}`
+                : "Manual Wi-Fi setup"}
             </Badge>
-          )}
-          <Badge variant="outline">
-            {totalScans} scan{totalScans === 1 ? "" : "s"} received
-          </Badge>
+            {connectedPhones.length > 0 && (
+              <Badge variant="outline" className="gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-success" aria-hidden />
+                {connectedPhones.length} phone{connectedPhones.length > 1 ? "s" : ""} connected
+              </Badge>
+            )}
+            <Badge variant="outline">
+              {totalScans} scan{totalScans === 1 ? "" : "s"} received
+            </Badge>
+          </div>
         </div>
       </CardHeader>
 
-      <CardContent className="space-y-4">
-        {/* 1 — join the Wi-Fi */}
-        <div className="flex flex-col items-center gap-2.5 rounded-xl border bg-secondary/30 p-4">
-          <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-            Phone setup · 1 — join the Wi-Fi
-          </p>
-          <div className="rounded-lg bg-white p-2">
-            {qrSrc ? (
-              <Image
-                src={qrSrc}
+      <CardContent className="space-y-5">
+        {/* The two big setup steps, side by side on wide screens.
+            Each carries a LARGE scannable QR so the phone is configured
+            with its own camera — no typing. */}
+        <div className="grid gap-4 md:grid-cols-2">
+          {/* 1 — join the Wi-Fi */}
+          <section className="rounded-xl border bg-secondary/30 p-4">
+            <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+              Phone setup · 1 — join the Wi-Fi
+            </p>
+            <div className="mt-3 flex flex-col items-center gap-4 sm:flex-row">
+              <QrTile
+                src={wifiQrSrc}
                 alt={`QR code that joins the ${session.ssid} Wi-Fi network`}
-                width={288}
-                height={288}
-                className="h-36 w-36"
-                unoptimized
+                label="Scan to join"
               />
-            ) : (
-              <div className="flex h-36 w-36 items-center justify-center rounded-lg border-2 border-dashed border-border text-xs text-muted-foreground">
-                Generating QR…
+              <div className="w-full min-w-0 flex-1 space-y-2">
+                <p className="text-[11px] leading-relaxed text-muted-foreground">
+                  Scan with the phone&apos;s camera app — it joins instantly. Or type:
+                </p>
+                <dl className="space-y-1.5 text-sm">
+                  <div className="flex items-center justify-between gap-2">
+                    <dt className="shrink-0 text-muted-foreground">Wi-Fi name</dt>
+                    <dd className="flex min-w-0 items-center gap-1">
+                      <span className="truncate font-semibold text-foreground">
+                        {session.ssid}
+                      </span>
+                      <CopyValueButton value={session.ssid} ariaLabel="Copy the Wi-Fi name" />
+                    </dd>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <dt className="shrink-0 text-muted-foreground">Password</dt>
+                    <dd className="flex min-w-0 items-center gap-1">
+                      <span className="truncate font-mono font-semibold text-foreground">
+                        {session.password}
+                      </span>
+                      <CopyValueButton value={session.password} ariaLabel="Copy the Wi-Fi password" />
+                    </dd>
+                  </div>
+                </dl>
               </div>
-            )}
-          </div>
-          <p className="text-center text-[11px] leading-relaxed text-muted-foreground">
-            Scan this with the phone&apos;s camera app to join — or type the details
-            below.
-          </p>
-          <dl className="w-full space-y-1.5 text-sm">
-            <div className="flex items-center justify-between gap-2">
-              <dt className="shrink-0 text-muted-foreground">Wi-Fi name</dt>
-              <dd className="flex min-w-0 items-center gap-1">
-                <span className="truncate font-semibold text-foreground">
-                  {session.ssid}
-                </span>
-                <CopyValueButton value={session.ssid} ariaLabel="Copy the Wi-Fi name" />
-              </dd>
             </div>
-            <div className="flex items-center justify-between gap-2">
-              <dt className="shrink-0 text-muted-foreground">Password</dt>
-              <dd className="flex min-w-0 items-center gap-1">
-                <span className="truncate font-mono font-semibold text-foreground">
-                  {session.password}
-                </span>
-                <CopyValueButton value={session.password} ariaLabel="Copy the Wi-Fi password" />
-              </dd>
-            </div>
-          </dl>
-        </div>
+          </section>
 
-        {/* 2 — point the scanner app at this server */}
-        <div className="space-y-2">
-          <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-            Phone setup · 2 — scanner app server
-          </p>
-          {session.urls.map((url, i) => (
-            <div
-              key={url}
-              className="flex min-h-11 items-center justify-between gap-2 rounded-lg border px-3 py-1.5"
-            >
-              <span className="min-w-0 truncate font-mono text-sm font-semibold text-foreground">
-                {url}
-              </span>
-              <span className="flex shrink-0 items-center gap-2">
-                {i === 0 && session.urls.length > 1 && (
-                  <Badge variant="secondary">most likely</Badge>
+          {/* 2 — the scanner server web link */}
+          <section className="rounded-xl border bg-secondary/30 p-4">
+            <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+              Phone setup · 2 — scanner server link
+            </p>
+            <div className="mt-3 flex flex-col items-center gap-4 sm:flex-row">
+              <QrTile
+                src={serverQrSrc}
+                alt={
+                  primaryUrl
+                    ? `QR code of the scanner server web link ${primaryUrl}`
+                    : "QR code of the scanner server web link"
+                }
+                label="Scan the link"
+              />
+              <div className="w-full min-w-0 flex-1 space-y-2">
+                <p className="text-[11px] leading-relaxed text-muted-foreground">
+                  This laptop&apos;s address on the hotspot — the phone scanner app
+                  scans it (or types it) once in its settings:
+                </p>
+                {primaryUrl ? (
+                  <div className="flex min-h-11 items-center justify-between gap-2 rounded-lg border px-3 py-1.5">
+                    <span className="min-w-0 truncate font-mono text-sm font-bold text-foreground">
+                      {primaryUrl}
+                    </span>
+                    <span className="flex shrink-0 items-center gap-2">
+                      {session.urls.length > 1 && (
+                        <Badge variant="secondary">most likely</Badge>
+                      )}
+                      <CopyValueButton value={primaryUrl} ariaLabel="Copy the server address" />
+                    </span>
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    No local address found yet — it appears once the laptop joins a network.
+                  </p>
                 )}
-                <CopyValueButton value={url} ariaLabel="Copy the server address" />
-              </span>
+                {otherUrls.length > 0 && (
+                  <ul className="space-y-1">
+                    {otherUrls.map((url) => (
+                      <li
+                        key={url}
+                        className="flex min-h-9 items-center justify-between gap-2 rounded-lg border border-dashed px-3 py-1"
+                      >
+                        <span className="min-w-0 truncate font-mono text-xs text-muted-foreground">
+                          {url}
+                        </span>
+                        <CopyValueButton value={url} ariaLabel="Copy the alternate server address" />
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             </div>
-          ))}
-          <p className="text-[11px] leading-relaxed text-muted-foreground">
-            {session.urls.length > 1
-              ? "If several are listed, use the one the phone can reach (usually the first)."
-              : "Enter this address once in the phone scanner app's settings."}
-          </p>
+          </section>
         </div>
 
         {/* Manual setup steps / auto-setup status */}
@@ -676,88 +766,111 @@ export function HotspotPanel({ onScanEvent }: HotspotPanelProps) {
             </p>
             {session.autoError && (
               <p className="text-[11px] leading-relaxed text-warning-foreground/80">
-                Auto-setup note: {session.autoError}
+                Why automatic setup didn&apos;t work: {session.autoError}
               </p>
             )}
           </div>
         ) : (
-          <p className="flex items-start gap-2 rounded-lg bg-success/10 px-3 py-2 text-xs font-medium text-success" role="note">
+          <p
+            className="flex items-start gap-2 rounded-lg bg-success/10 px-3 py-2 text-xs font-medium text-success"
+            role="note"
+          >
             <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-            Wi-Fi hotspot is broadcasting — join it on the scanner phone and start
-            scanning. Scans open below, same as the camera.
+            The Wi-Fi hotspot is broadcasting — other devices can see{" "}
+            <span className="font-semibold">{session.ssid}</span> in their Wi-Fi lists
+            right now. Join it on the scanner phone and start scanning; scans open
+            below, same as the camera.
           </p>
         )}
 
-        {/* Scanner phones */}
-        <div className="space-y-2">
-          <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-widest text-muted-foreground">
-            <Radio className="h-3.5 w-3.5" aria-hidden />
-            Scanner phones
+        {/* Windows Firewall couldn't be opened automatically — the most
+            common "phone joined but can't connect" cause. */}
+        {session.firewallHint && (
+          <p
+            className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs leading-relaxed text-warning-foreground"
+            role="note"
+          >
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+            Windows Firewall approval was skipped, so the phone may join the Wi-Fi but
+            not reach the server. Fix once: Windows Security → Firewall &amp; network
+            protection → Allow an app through firewall → tick{" "}
+            <span className="font-semibold">Node.js</span> for Private AND Public — or
+            relaunch this console as Administrator and reopen the hotspot.
           </p>
-          {phones.length === 0 ? (
-            <p className="text-xs leading-relaxed text-muted-foreground">
-              No phone connected yet — it appears here (and stays live) the moment the
-              scanner app talks to this server.
-            </p>
-          ) : (
-            <ul className="space-y-1">
-              {phones.map((phone) => {
-                const fresh = Date.now() - Date.parse(phone.lastSeen) < 10_000;
-                return (
-                  <li
-                    key={phone.deviceId}
-                    className="flex min-h-9 items-center justify-between gap-2 rounded-lg border px-3 py-1 text-xs"
-                  >
-                    <span className="flex min-w-0 items-center gap-2">
-                      <span
-                        className={cn(
-                          "h-2 w-2 shrink-0 rounded-full",
-                          fresh ? "bg-success" : "bg-muted-foreground/40"
-                        )}
-                        aria-hidden
-                      />
-                      <Smartphone
-                        className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
-                        aria-hidden
-                      />
-                      <span className="truncate font-medium text-foreground">
-                        {phone.name}
-                      </span>
-                    </span>
-                    <span className="shrink-0 text-muted-foreground">
-                      {phone.scanCount} scanned · {lastSeenLabel(phone.lastSeen)}
-                    </span>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>
+        )}
 
-        {/* Live feed of received scans */}
-        <div className="space-y-2">
-          <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-            Received scans — {events.length > 0 ? `${events.length} shown` : "waiting for the first"}
-          </p>
-          {events.length === 0 ? (
-            <p className="rounded-lg border border-dashed px-3 py-4 text-center text-xs leading-relaxed text-muted-foreground">
-              Scans from the phone land here and open the same order card as the
-              camera — confirm SERVE on the laptop as usual.
+        {/* Scanner phones + received scans, side by side on wide screens */}
+        <div className="grid gap-4 md:grid-cols-2">
+          <section className="space-y-2">
+            <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-widest text-muted-foreground">
+              <Radio className="h-3.5 w-3.5" aria-hidden />
+              Scanner phones
             </p>
-          ) : (
-            <ul
-              className="max-h-64 space-y-1 overflow-y-auto scroll-thin pr-1"
-              aria-label="Scans received from phones"
-            >
-              {events.map((ev) => (
-                <ScanRow
-                  key={ev.id}
-                  ev={ev}
-                  onPick={(e) => onScanEventRef.current(e, false)}
-                />
-              ))}
-            </ul>
-          )}
+            {phones.length === 0 ? (
+              <p className="rounded-lg border border-dashed px-3 py-4 text-xs leading-relaxed text-muted-foreground">
+                No phone connected yet — it appears here (and stays live) the moment the
+                scanner app talks to this server.
+              </p>
+            ) : (
+              <ul className="space-y-1">
+                {phones.map((phone) => {
+                  const fresh = Date.now() - Date.parse(phone.lastSeen) < 10_000;
+                  return (
+                    <li
+                      key={phone.deviceId}
+                      className="flex min-h-9 items-center justify-between gap-2 rounded-lg border px-3 py-1 text-xs"
+                    >
+                      <span className="flex min-w-0 items-center gap-2">
+                        <span
+                          className={cn(
+                            "h-2 w-2 shrink-0 rounded-full",
+                            fresh ? "bg-success" : "bg-muted-foreground/40"
+                          )}
+                          aria-hidden
+                        />
+                        <Smartphone
+                          className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                          aria-hidden
+                        />
+                        <span className="truncate font-medium text-foreground">
+                          {phone.name}
+                        </span>
+                      </span>
+                      <span className="shrink-0 text-muted-foreground">
+                        {phone.scanCount} scanned · {lastSeenLabel(phone.lastSeen)}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
+
+          <section className="space-y-2">
+            <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-widest text-muted-foreground">
+              <QrCodeIcon className="h-3.5 w-3.5" aria-hidden />
+              Received scans — {events.length > 0 ? `${events.length} shown` : "waiting for the first"}
+            </p>
+            {events.length === 0 ? (
+              <p className="rounded-lg border border-dashed px-3 py-4 text-xs leading-relaxed text-muted-foreground">
+                Scans from the phone land here and open the same order card as the
+                camera — confirm SERVE on the laptop as usual.
+              </p>
+            ) : (
+              <ul
+                className="max-h-80 space-y-1 overflow-y-auto scroll-thin pr-1"
+                aria-label="Scans received from phones"
+              >
+                {events.map((ev) => (
+                  <ScanRow
+                    key={ev.id}
+                    ev={ev}
+                    onPick={(e) => onScanEventRef.current(e, false)}
+                  />
+                ))}
+              </ul>
+            )}
+          </section>
         </div>
       </CardContent>
 

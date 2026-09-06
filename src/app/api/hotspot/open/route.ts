@@ -1,10 +1,15 @@
 // POST /api/hotspot/open — "Open Hotspot" button (Scanner view).
 //
 // Starts the local phone-scanner bridge:
-//   1. tries to bring the laptop's Wi-Fi hotspot up AUTOMATICALLY
-//      (Linux + NetworkManager via nmcli: shared AP, WPA2);
-//   2. falls back to MANUAL mode (numbered steps per platform) — the local
-//      receive server + scan feed run either way;
+//   1. tries to bring the laptop's Wi-Fi hotspot up AUTOMATICALLY — a REAL
+//      hotspot other devices can see and join:
+//        Linux   → NetworkManager shared AP (nmcli, fully automatic)
+//        Windows → Mobile Hotspot (WinRT, no UAC) → legacy Hosted Network
+//                  (netsh, one UAC approval, works offline) — plus a
+//                  Windows Firewall rule so phones can reach the server
+//   2. falls back to MANUAL mode (numbered steps per platform) with the
+//      actual reason auto-setup failed — the local receive server + scan
+//      feed run either way;
 //   3. returns the session (ssid/password/urls) the Scanner panel shows.
 //
 // The phone scanner app joins the hotspot and posts decoded Order-QR text
@@ -15,6 +20,9 @@ import { errorResponse, fail, readJson, unauthorized } from "@/app/api/_lib/http
 import { corsJson, corsOptions, hotspotStore } from "@/app/api/_lib/hotspot-store";
 import {
   enableLinuxHotspot,
+  enableWindowsHostedNetwork,
+  enableWindowsMobileHotspot,
+  ensureWindowsFirewallRule,
   findWifiIface,
   localCandidateUrls,
   manualInstructions,
@@ -75,29 +83,70 @@ export async function POST(req: Request) {
     const serverPort = Number(process.env.PORT ?? 3000) || 3000;
     const platform = process.platform;
 
-    // ---- Automatic hotspot (Linux + NetworkManager) ------------------
+    // ---- Bring the real hotspot up ------------------------------------
     let mode: "auto" | "manual" = "manual";
     let autoIp: string | null = null;
     let autoError: string | null = null;
+    let autoMethod: string | null = null;
+    let firewallHint = false;
     let urls: string[] = [];
 
     if (platform === "linux") {
       const hasNmcli = await nmcliAvailable();
-      if (hasNmcli) {
+      if (!hasNmcli) {
+        autoError =
+          "NetworkManager (nmcli) is not available on this machine — the Wi-Fi hotspot has to be turned on manually.";
+      } else {
         const iface = await findWifiIface();
         if (!iface) {
-          autoError = "No Wi-Fi adapter was found — start the hotspot manually.";
+          autoError = "No Wi-Fi adapter was found — the hotspot must be turned on manually.";
         } else {
           const enabled = await enableLinuxHotspot({ ssid, password, iface });
           if (enabled.ok) {
             mode = "auto";
+            autoMethod = enabled.method;
             autoIp = enabled.ip;
+            if (enabled.appliedSsid) ssid = enabled.appliedSsid;
+            if (enabled.appliedPassword) password = enabled.appliedPassword;
             if (enabled.ip) urls.push(`http://${enabled.ip}:${serverPort}`);
           } else {
-            autoError = `Hotspot could not be started automatically (${enabled.error}). Start it manually.`;
+            autoError = `Automatic hotspot failed: ${enabled.error ?? "unknown error"} — turn it on manually.`;
           }
         }
       }
+    } else if (platform === "win32") {
+      // 1 — Windows Mobile Hotspot (the Settings switch, no admin needed).
+      const mobile = await enableWindowsMobileHotspot({ ssid, password });
+      if (mobile.ok) {
+        mode = "auto";
+        autoMethod = mobile.method;
+        autoIp = mobile.ip;
+        if (mobile.appliedSsid) ssid = mobile.appliedSsid;
+        if (mobile.appliedPassword) password = mobile.appliedPassword;
+        if (mobile.ip) urls.push(`http://${mobile.ip}:${serverPort}`);
+      } else {
+        // 2 — legacy Hosted Network (offline-capable, one UAC approval).
+        const hosted = await enableWindowsHostedNetwork({ ssid, password, port: serverPort });
+        if (hosted.ok) {
+          mode = "auto";
+          autoMethod = hosted.method;
+          autoIp = hosted.ip;
+          if (hosted.ip) urls.push(`http://${hosted.ip}:${serverPort}`);
+        } else {
+          const reason = mobile.error && hosted.error
+            ? `${mobile.error}; also tried the Hosted Network: ${hosted.error}`
+            : (hosted.error ?? mobile.error ?? "Windows could not start a hotspot");
+          autoError = `${reason}. Use the manual steps below — or connect this PC to any network (Wi-Fi/Ethernet) and press Open Hotspot again, so Windows can share it.`;
+        }
+      }
+
+      // Phones must be able to REACH the server: Windows Firewall blocks
+      // inbound by default. Best effort — a declined UAC only downgrades
+      // to a hint, never to manual mode.
+      const fw = await ensureWindowsFirewallRule(serverPort);
+      if (fw === null) firewallHint = true;
+    } else {
+      autoError = `Automatic hotspot setup isn't supported on ${platform} — use the manual steps below.`;
     }
 
     // Always include every local address as candidates (definitive first).
@@ -111,10 +160,12 @@ export async function POST(req: Request) {
       password,
       autoIp,
       autoError,
+      autoMethod,
+      firewallHint,
       serverPort,
       urls,
       platform,
-      instructions: mode === "manual" ? manualInstructions(platform) : null,
+      instructions: manualInstructions(platform),
     });
 
     return corsJson(statusResponse());

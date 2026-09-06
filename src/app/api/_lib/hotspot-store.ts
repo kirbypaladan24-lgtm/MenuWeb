@@ -48,6 +48,8 @@ export interface OpenSessionInput {
   password: string;
   autoIp: string | null;
   autoError: string | null;
+  autoMethod: string | null;
+  firewallHint: boolean;
   serverPort: number;
   urls: string[];
   platform: string;
@@ -81,6 +83,8 @@ class HotspotStore {
       openedAt: new Date().toISOString(),
       autoIp: input.autoIp,
       autoError: input.autoError,
+      autoMethod: input.autoMethod,
+      firewallHint: input.firewallHint,
       serverPort: input.serverPort,
       urls: input.urls,
       platform: input.platform,

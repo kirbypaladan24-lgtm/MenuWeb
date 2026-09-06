@@ -955,14 +955,6 @@ export default function Scanner() {
               is assigned automatically.
             </p>
           </div>
-
-          {/* Phone-scanner hotspot — the SECOND scanning option. A phone
-              joined to this laptop's Wi-Fi hotspot scans customer Order
-              QRs with the phone camera and POSTs the decoded text to this
-              admin app (fully offline — the laptop is the local server and
-              source of truth). Received scans flow into the same result
-              card + SERVE/ABORT flow above; the camera is never affected. */}
-          <HotspotPanel onScanEvent={applyPhoneEvent} />
         </div>
 
         {/* Customer web-menu QR — to the LEFT of the scanner; walk-bys scan
@@ -970,6 +962,18 @@ export default function Scanner() {
         <div className="order-2 mx-auto w-full max-w-sm lg:order-1 lg:mx-0">
           <WebMenuQR />
         </div>
+      </div>
+
+      {/* Phone-scanner hotspot — the SECOND scanning option, full-width
+          under the scanner pair so the open panel has room for its two
+          big QRs. A phone joined to this laptop's Wi-Fi hotspot scans
+          customer Order QRs with the phone camera and POSTs the decoded
+          text to this admin app (fully offline — the laptop is the local
+          server and source of truth). Received scans flow into the same
+          result card + SERVE/ABORT flow above; the camera is never
+          affected. */}
+      <div className="mx-auto mt-8 w-full max-w-4xl">
+        <HotspotPanel onScanEvent={applyPhoneEvent} />
       </div>
 
       {/* Result */}

@@ -182,6 +182,10 @@ export interface HotspotSession {
   autoIp: string | null;
   /** Why auto-configuration failed (manual mode fallback reason). */
   autoError: string | null;
+  /** Human label for what hosts the AP (e.g. "Windows Mobile Hotspot"). */
+  autoMethod: string | null;
+  /** True when Windows Firewall could not be opened automatically (UAC declined). */
+  firewallHint: boolean;
   serverPort: number;
   /** Candidate http://<ip>:<port> URLs the phone app can talk to. */
   urls: string[];

@@ -79,18 +79,31 @@ protection. The publishable half is the separate `coffeepp-client` site.
 
 The **Scanner** view has a second scanning option for when the laptop camera
 can't keep up (glare, slow autofocus, tiny QRs): press **Open Hotspot** and a
-separate **phone scanner app** becomes the camera.
+separate **phone scanner app** becomes the camera. The panel sits full-width
+below the scanner and shows **two large QR codes** — one that joins the phone
+to the Wi-Fi, one that hands the scanner app the server link.
 
-1. **Open Hotspot** (under the Manual Order button). On Linux +
-   NetworkManager the laptop's Wi-Fi hotspot comes up automatically (shared
-   access point, WPA2). On Windows/macOS the panel shows three short manual
-   steps (Mobile hotspot / Internet Sharing) — the bridge works either way.
+1. **Open Hotspot** (the big panel under the scanner). The laptop's **real
+   Wi-Fi hotspot** comes up automatically — it pops up in nearby devices'
+   Wi-Fi lists, ready to join:
+   - **Linux + NetworkManager**: fully automatic shared access point (WPA2,
+     typically `10.42.0.1`).
+   - **Windows**: first the **Mobile Hotspot** (the Settings switch — needs
+     any connection to share), then the legacy **Hosted Network** (works
+     completely offline, needs one Windows administrator approval).
+     Either way a **Windows Firewall rule** for the server port is added so
+     the phone can actually reach the app (declining it only shows a hint).
+   - **macOS / exotic setups**: numbered manual steps, bridge works either
+     way. If every automatic attempt fails, the panel shows the exact
+     reason — connecting the laptop to *any* network (Wi-Fi or Ethernet)
+     and pressing Open Hotspot again usually lets Windows share it.
 2. The panel shows the **Wi-Fi name + password** (remembered between
-   sessions, plus a join-QR the phone's stock camera app can scan) and the
-   **server address** the scanner app needs, e.g. `http://10.42.0.1:3001`.
+   sessions, plus a **join-QR** the phone's stock camera app can scan) and
+   the **scanner server link** (`http://192.168.137.1:3001` on Windows,
+   `http://10.42.0.1:3001` on Linux) — also as a **big scannable QR**.
 3. Join the phone to that Wi-Fi and point the scanner app at the server
-   address. Every QR the phone decodes is sent to this laptop and goes
-   through the **exact same pipeline as the laptop camera** — same
+   link (scan the QR). Every QR the phone decodes is sent to this laptop and
+   goes through the **exact same pipeline as the laptop camera** — same
    validation, re-pricing, duplicate-copy behavior — then pops the same
    order card here and lands in the **Received scans** feed. Confirm
    SERVE/ABORT on the laptop exactly as with camera scans.
