@@ -47,6 +47,8 @@ protection. The publishable half is the separate `coffeepp-client` site.
      when a customer ordered 1 but decides they want 2.
    - No camera? **Paste the QR payload** (JSON) or type an Order ID of an
      already-registered order.
+   - Laptop camera struggling (glare, autofocus)? **Open Hotspot** below and
+     scan with a phone instead — see the next section.
    - Walk-in customer? **Manual Order** — pick products, enter what to call
      them + their name, assign payment; the ID is generated for you.
 2. **Waiting Line** — live queue of registered orders (auto-refreshes). Each
@@ -62,11 +64,70 @@ protection. The publishable half is the separate `coffeepp-client` site.
    order with the call-out name, name, email, quantity, temperature, this
    item's subtotal, the order total, payment method + status, order status
    and dates. Search it, filter by status, click any column to sort, or
-   export the current view as CSV.
+   export the current view. **Excel** is the primary export: every
+   column is auto-fitted to its longest cell (long emails and names are
+   never cut off in Excel), the header row gets Excel filter dropdowns,
+   and money lands as real peso-formatted numbers you can sort and sum.
+   **CSV** stays available from the format dropdown next to the Excel
+   button.
    Every email shown anywhere in the console (buyers table, orders,
    waiting line, scanner, serve confirmation) has a small **copy icon** —
    one press puts the address on the clipboard.
 5. **Reports** — Excel export (4 sheets) + full JSON backup.
+
+## Scan with a phone — Open Hotspot (works offline)
+
+The **Scanner** view has a second scanning option for when the laptop camera
+can't keep up (glare, slow autofocus, tiny QRs): press **Open Hotspot** and a
+separate **phone scanner app** becomes the camera.
+
+1. **Open Hotspot** (under the Manual Order button). On Linux +
+   NetworkManager the laptop's Wi-Fi hotspot comes up automatically (shared
+   access point, WPA2). On Windows/macOS the panel shows three short manual
+   steps (Mobile hotspot / Internet Sharing) — the bridge works either way.
+2. The panel shows the **Wi-Fi name + password** (remembered between
+   sessions, plus a join-QR the phone's stock camera app can scan) and the
+   **server address** the scanner app needs, e.g. `http://10.42.0.1:3001`.
+3. Join the phone to that Wi-Fi and point the scanner app at the server
+   address. Every QR the phone decodes is sent to this laptop and goes
+   through the **exact same pipeline as the laptop camera** — same
+   validation, re-pricing, duplicate-copy behavior — then pops the same
+   order card here and lands in the **Received scans** feed. Confirm
+   SERVE/ABORT on the laptop exactly as with camera scans.
+
+Everything runs **on the local network only — no internet needed**. The
+laptop stays the server and the source of truth; the phone is just a
+wireless camera. The laptop's own camera scanning is never affected while
+the hotspot is open, and **Close Hotspot** tears it all down.
+
+The hotspot endpoints answer on the LAN with open CORS and no credentials —
+by design, so any phone app can talk to them offline. They only ever run on
+the booth's own Wi-Fi (protected by its WPA2 password), consistent with the
+console's no-sign-in design. Keep `Close Hotspot` handy when you're done.
+
+### Phone scanner app API contract
+
+The phone app (its own separate project) only needs plain HTTP against the
+server address shown on the panel:
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /api/hotspot/status?deviceId=…&deviceName=…` | Heartbeat + session info — this is also how the panel lists the phone as connected. |
+| `POST /api/hotspot/scan` | Send a decoded QR: body `{ "payload": "<decoded QR text>", "deviceId": "…", "deviceName": "…" }` (payload may also be the parsed order object). |
+| `GET /api/hotspot/status?withEvents=1&since=<id>` | Optional: the scan-event feed the console panel itself polls. |
+| `POST /api/hotspot/open` · `POST /api/hotspot/close` | Console-only (the panel's buttons). |
+
+`POST /api/hotspot/scan` always answers JSON the phone can render directly:
+
+- `201 { ok: true, outcome: "registered", order, warnings, message }` —
+  full Order-QR JSON registered (re-scan adds another copy, like the camera)
+- `200 { ok: true, outcome: "lookup-waiting" | "lookup-served" | "lookup-aborted", order, message }` — bare `ORD-…` ids
+- `404 { ok: false, outcome: "not-found", message }` — id has no registered order
+- `400 { ok: false, outcome: "invalid", message }` — not a Coffee++ Order QR
+- `403 / 400 { ok: false, outcome: "error", error, code, message }` — rejected (booth closed, bad fields, …)
+
+Scans that arrive while the Scanner view is closed still register — they
+show up in **Orders**; open the Scanner to see the live feed again.
 
 ## Net Profit = Revenue − Total Cost
 
@@ -96,5 +157,6 @@ client site:
 ## Tech
 
 Next.js 16 (App Router) · TypeScript · Tailwind CSS 4 · shadcn/ui ·
-Prisma + SQLite · jsQR (camera scanning) · SheetJS (Excel export) ·
-Zustand + TanStack Query.
+Prisma + SQLite · jsQR (camera scanning) · qrcode (Wi-Fi join QR) ·
+SheetJS (Excel export) · offline phone-scanner hotspot bridge
+(`/api/hotspot/*`) · Zustand + TanStack Query.

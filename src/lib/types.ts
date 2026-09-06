@@ -141,3 +141,84 @@ export interface ApiErrorBody {
   code?: string;
   order?: Order;
 }
+
+/* ------------------------------------------------------------------ */
+/* Hotspot / phone-scanner bridge (admin side)                          */
+/* ------------------------------------------------------------------ */
+// "Open Hotspot" turns the booth laptop into the local server: the laptop
+// hosts a Wi-Fi hotspot, a separate phone scanner app joins it and posts
+// decoded Order-QR text to /api/hotspot/scan. Everything stays on the
+// local network — no internet needed. The laptop keeps its own camera
+// scanner; the phone is just a second (sharper) pair of eyes.
+
+/** How the OS hotspot was brought up. */
+export type HotspotMode = "auto" | "manual";
+
+/** What happened when a phone scan hit /api/hotspot/scan. */
+export type HotspotScanOutcome =
+  | "registered" // full Order QR → order registered (re-scan = another copy)
+  | "lookup-waiting" // bare Order ID → already waiting in line
+  | "lookup-served" // bare Order ID → order was already served
+  | "lookup-aborted" // bare Order ID → order was already aborted
+  | "not-found" // bare Order ID → nothing registered under that id
+  | "invalid" // scanned text is not a Coffee++ Order QR
+  | "error"; // payload rejected (booth closed, validation, …)
+
+/** Manual Wi-Fi setup steps (manual mode) — server-provided, per platform. */
+export interface HotspotInstructions {
+  title: string;
+  steps: string[];
+  note: string;
+}
+
+/** The live hotspot session on the admin laptop (server memory). */
+export interface HotspotSession {
+  active: true;
+  mode: HotspotMode;
+  ssid: string;
+  password: string;
+  openedAt: string; // ISO
+  /** Hotspot IP when the OS hotspot was auto-configured (e.g. 10.42.0.1). */
+  autoIp: string | null;
+  /** Why auto-configuration failed (manual mode fallback reason). */
+  autoError: string | null;
+  serverPort: number;
+  /** Candidate http://<ip>:<port> URLs the phone app can talk to. */
+  urls: string[];
+  platform: string;
+  /** Manual setup steps when mode is "manual" (null in auto mode). */
+  instructions: HotspotInstructions | null;
+}
+
+/** A scanner phone that recently talked to the server (heartbeat). */
+export interface HotspotPhone {
+  deviceId: string;
+  name: string;
+  lastSeen: string; // ISO
+  scanCount: number;
+}
+
+/** One received phone scan, as shown in the Scanner's live feed. */
+export interface HotspotScanEvent {
+  id: number;
+  ts: string; // ISO
+  deviceId: string | null;
+  deviceName: string | null;
+  outcome: HotspotScanOutcome;
+  message: string | null;
+  code: string | null;
+  order: Order | null;
+  warnings: string[];
+  /** First ~40 chars of the raw scanned text (for invalid scans). */
+  preview: string;
+}
+
+/** GET /api/hotspot/status (+ open) response. */
+export interface HotspotStatusResponse {
+  hotspot: HotspotSession | null;
+  phones: HotspotPhone[];
+  /** Present only when requested with withEvents=1 (admin UI poll). */
+  events?: HotspotScanEvent[];
+  lastEventId: number;
+  totalScans: number;
+}

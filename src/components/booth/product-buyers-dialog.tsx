@@ -5,7 +5,7 @@
 // table row per order, with the full customer credentials (call-out name,
 // name, email), this product's line-item details (qty / temp / subtotal),
 // payment + order status, and timestamps. Search, status filter, sortable
-// columns and CSV export keep the table flexible and organized.
+// columns and Excel / CSV export keep the table flexible and organized.
 
 import * as React from "react";
 import Image from "next/image";
@@ -14,7 +14,9 @@ import {
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
-  Download,
+  ChevronDown,
+  FileSpreadsheet,
+  FileText,
   Loader2,
   Mail,
   Search,
@@ -32,6 +34,12 @@ import {
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   Table,
   TableBody,
   TableCell,
@@ -47,6 +55,7 @@ import {
   PaymentStatusBadge,
 } from "@/components/shared/status-badge";
 import { apiFetch } from "@/lib/api";
+import { useToast } from "@/hooks/use-toast";
 import {
   formatDateTime,
   formatPeso,
@@ -105,8 +114,54 @@ function compareBuyers(a: ProductBuyer, b: ProductBuyer, key: SortKey): number {
 }
 
 /* ------------------------------------------------------------------ */
-/* CSV export — one row per buyer, filtered + sorted exactly as shown  */
+/* Exports — one row per buyer, filtered + sorted exactly as shown.    */
+/* Excel (.xlsx) is the primary format: every column is auto-fitted    */
+/* to its longest cell so long emails / names are never cut in half,   */
+/* the header row gets Excel filter dropdowns, and money lands as      */
+/* real ₱-formatted numbers (sortable + summable like a native Excel   */
+/* table). CSV stays available from the format dropdown for tools      */
+/* that want plain text.                                               */
 /* ------------------------------------------------------------------ */
+
+const EXPORT_HEADERS = [
+  "Order ID",
+  "Call-out name",
+  "Customer name",
+  "Email",
+  "Quantity",
+  "Temperature",
+  "This item subtotal",
+  "Order total",
+  "Payment method",
+  "Payment status",
+  "Order status",
+  "Ordered at",
+  "Scanned at",
+  "Served at",
+] as const;
+
+/** Column indexes holding money — formatted as ₱ in the Excel export. */
+const EXPORT_MONEY_COLS = [6, 7] as const;
+
+/** One export row from a buyer — shared by the Excel and CSV writers. */
+function buyerRow(r: ProductBuyer): (string | number)[] {
+  return [
+    r.orderId,
+    callOutName(r),
+    r.customerName,
+    r.customerEmail,
+    r.quantity,
+    r.temperature ?? "",
+    r.subtotal,
+    r.orderTotal,
+    paymentMethodLabel(r.paymentMethod),
+    r.paymentStatus,
+    r.orderStatus,
+    formatDateTime(r.createdAt),
+    r.scannedAt ? formatDateTime(r.scannedAt) : "",
+    r.completedAt ? formatDateTime(r.completedAt) : "",
+  ];
+}
 
 function csvEscape(value: string): string {
   if (/[",\n\r]/.test(value)) {
@@ -115,53 +170,79 @@ function csvEscape(value: string): string {
   return value;
 }
 
-function exportBuyersCsv(product: Product, rows: ProductBuyer[]) {
-  const header = [
-    "Order ID",
-    "Call-out name",
-    "Customer name",
-    "Email",
-    "Quantity",
-    "Temperature",
-    "This item subtotal",
-    "Order total",
-    "Payment method",
-    "Payment status",
-    "Order status",
-    "Ordered at",
-    "Scanned at",
-    "Served at",
-  ];
-  const lines = rows.map((r) =>
-    [
-      r.orderId,
-      callOutName(r),
-      r.customerName,
-      r.customerEmail,
-      String(r.quantity),
-      r.temperature ?? "",
-      String(r.subtotal),
-      String(r.orderTotal),
-      paymentMethodLabel(r.paymentMethod),
-      r.paymentStatus,
-      r.orderStatus,
-      formatDateTime(r.createdAt),
-      r.scannedAt ? formatDateTime(r.scannedAt) : "",
-      r.completedAt ? formatDateTime(r.completedAt) : "",
-    ]
-      .map(csvEscape)
-      .join(",")
-  );
-  const csv = [header.join(","), ...lines].join("\r\n");
-  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
+function triggerDownload(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `coffeepp-${product.id.toLowerCase()}-buyers.csv`;
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
+}
+
+function exportBuyersCsv(product: Product, rows: ProductBuyer[]) {
+  const lines = rows.map((r) =>
+    buyerRow(r)
+      .map((v) => csvEscape(String(v ?? "")))
+      .join(",")
+  );
+  const csv = [EXPORT_HEADERS.join(","), ...lines].join("\r\n");
+  triggerDownload(
+    new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" }),
+    `coffeepp-${product.id.toLowerCase()}-buyers.csv`
+  );
+}
+
+/**
+ * Excel export — built in the browser with SheetJS (dynamically imported
+ * so the ~1 MB library only loads when an export actually happens).
+ * "Flexible tables": column widths are computed from each column's longest
+ * cell (header or value, clamped 9–55 chars) so nothing is cut in half,
+ * the header row gets Excel's filter dropdowns, and money cells are real
+ * numbers with a ₱ number format — sortable and summable in Excel.
+ */
+async function exportBuyersExcel(product: Product, rows: ProductBuyer[]) {
+  const XLSX = await import("xlsx");
+  const data: (string | number)[][] = [
+    [...EXPORT_HEADERS],
+    ...rows.map(buyerRow),
+  ];
+  const ws = XLSX.utils.aoa_to_sheet(data);
+
+  // Money cells → real numbers with a ₱ number format.
+  for (let r = 1; r < data.length; r++) {
+    for (const c of EXPORT_MONEY_COLS) {
+      const cell = ws[XLSX.utils.encode_cell({ r, c })];
+      if (cell && cell.t === "n") cell.z = '"₱"#,##0.00';
+    }
+  }
+
+  // Auto-fit columns: width = longest cell in the column + padding.
+  const widths: number[] = [];
+  for (const row of data) {
+    row.forEach((cell, col) => {
+      const len = String(cell ?? "").length;
+      widths[col] = Math.max(widths[col] ?? 0, len);
+    });
+  }
+  ws["!cols"] = widths.map((w) => ({ wch: Math.min(Math.max(w + 2, 9), 55) }));
+
+  // Excel filter dropdowns on the header row.
+  if (ws["!ref"]) ws["!autofilter"] = { ref: ws["!ref"] };
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Buyers");
+  const buffer = XLSX.write(wb, {
+    type: "array",
+    bookType: "xlsx",
+  }) as ArrayBuffer;
+  triggerDownload(
+    new Blob([buffer], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    }),
+    `coffeepp-${product.id.toLowerCase()}-buyers.xlsx`
+  );
 }
 
 /* ------------------------------------------------------------------ */
@@ -179,6 +260,7 @@ export function ProductBuyersDialog({
   const [status, setStatus] = React.useState<StatusFilter>("ALL");
   const [sortKey, setSortKey] = React.useState<SortKey>("createdAt");
   const [sortDir, setSortDir] = React.useState<"asc" | "desc">("desc");
+  const { toast } = useToast();
 
   // Reset the tools every time a different product is opened.
   React.useEffect(() => {
@@ -229,6 +311,34 @@ export function ProductBuyersDialog({
   const totalUnits = sorted.reduce((sum, r) => sum + r.quantity, 0);
   const totalItemRevenue = sorted.reduce((sum, r) => sum + r.subtotal, 0);
 
+  /* Export handlers — Excel is the primary format (auto-fit columns so
+     nothing is cut off in Excel); CSV stays available as plain text. */
+  async function handleExportExcel() {
+    if (!product || sorted.length === 0) return;
+    try {
+      await exportBuyersExcel(product, sorted);
+      toast({
+        title: "✓ Excel downloaded",
+        description: `${sorted.length} ${sorted.length === 1 ? "customer" : "customers"} — columns auto-fit, filters included.`,
+      });
+    } catch {
+      toast({
+        title: "Export failed",
+        description: "The Excel file couldn't be generated. Please try again.",
+        variant: "destructive",
+      });
+    }
+  }
+
+  function handleExportCsv() {
+    if (!product || sorted.length === 0) return;
+    exportBuyersCsv(product, sorted);
+    toast({
+      title: "✓ CSV downloaded",
+      description: `${sorted.length} ${sorted.length === 1 ? "customer" : "customers"}.`,
+    });
+  }
+
   function toggleSort(key: SortKey) {
     if (key === sortKey) {
       setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -256,7 +366,11 @@ export function ProductBuyersDialog({
       <DialogContent className="max-h-[88vh] overflow-y-auto scroll-thin sm:max-w-5xl">
         {product && (
           <>
-            <DialogHeader>
+            {/* min-w-0 — the dialog content is a grid and the header holds a
+                nowrap-truncating title; without min-w-0 its min-content
+                (~474px) inflates the grid track, stretching every sibling
+                (toolbar, table) past the dialog edge on mobile. */}
+            <DialogHeader className="min-w-0">
               <DialogTitle className="flex items-center gap-3">
                 <span className="relative flex h-11 w-11 shrink-0 overflow-hidden rounded-lg border bg-muted">
                   <Image
@@ -288,8 +402,11 @@ export function ProductBuyersDialog({
               </DialogDescription>
             </DialogHeader>
 
-            {/* Tools: search, status filter, CSV export */}
-            <div className="flex flex-wrap items-center gap-2">
+            {/* Tools: search, status filter, export (Excel primary, CSV in dropdown).
+                min-w-0 — the dialog content is a grid, and without it the
+                toolbar's min-content inflates past the dialog width so
+                flex-wrap never engages (tabs/buttons got cut off on mobile). */}
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
               <div className="relative min-w-0 flex-1 basis-56">
                 <Search
                   className="pointer-events-none absolute top-1/2 left-2.5 h-4 w-4 -translate-y-1/2 text-muted-foreground"
@@ -319,16 +436,41 @@ export function ProductBuyersDialog({
                   ))}
                 </TabsList>
               </Tabs>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-9"
-                onClick={() => exportBuyersCsv(product, sorted)}
-                disabled={sorted.length === 0}
-              >
-                <Download aria-hidden />
-                CSV
-              </Button>
+              <div className="flex items-center">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-9 rounded-r-none pr-3"
+                  onClick={() => void handleExportExcel()}
+                  disabled={sorted.length === 0}
+                >
+                  <FileSpreadsheet aria-hidden />
+                  Excel
+                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-9 rounded-l-none border-l-0 px-2"
+                      aria-label="Choose export format"
+                      disabled={sorted.length === 0}
+                    >
+                      <ChevronDown className="h-4 w-4" aria-hidden />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onSelect={() => void handleExportExcel()}>
+                      <FileSpreadsheet className="h-4 w-4" aria-hidden />
+                      <span>Excel (.xlsx) — auto-fit columns</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => handleExportCsv()}>
+                      <FileText className="h-4 w-4" aria-hidden />
+                      <span>CSV (.csv) — plain text</span>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
             </div>
 
             {/* Summary line */}

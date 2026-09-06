@@ -77,12 +77,20 @@ import {
   paymentMethodLabel,
   shortOrderId,
 } from "@/lib/format";
-import type { Order, OrderStatus, PaymentMethod, Product, Temperature } from "@/lib/types";
+import type {
+  HotspotScanEvent,
+  Order,
+  OrderStatus,
+  PaymentMethod,
+  Product,
+  Temperature,
+} from "@/lib/types";
 import { asList, callOutName, unwrapOrder, useApiError } from "./booth-utils";
 import { ViewHeader } from "./view-header";
 import { AbortConfirm } from "./abort-confirm";
 import { ServeConfirm } from "./serve-confirm";
 import { WebMenuQR } from "./web-menu-qr";
+import { HotspotPanel } from "./hotspot-panel";
 
 type Phase = "scan" | "looking-up" | "result" | "served" | "aborted" | "error";
 
@@ -708,6 +716,98 @@ export default function Scanner() {
     resetScanner();
   }
 
+  /* ---------------------------------------------------------------- */
+  /* Phone scans (hotspot bridge)                                     */
+  /* ---------------------------------------------------------------- */
+
+  /**
+   * A scan arrived from a phone over the hotspot — route it into the SAME
+   * result card + SERVE/ABORT flow a camera scan uses (the server already
+   * registered/looked it up via /api/hotspot/scan; this only DISPLAYS it).
+   * `auto` scans arrive straight from the live poll — when a dialog is open
+   * or a camera request is in flight we hold off so nothing gets clobbered
+   * mid-confirmation; the scan still sits in the panel's feed for a tap.
+   */
+  function applyPhoneEvent(ev: HotspotScanEvent, auto: boolean) {
+    if (auto && (phase === "looking-up" || serveOpen || abortOpen || manualOpen)) {
+      toast({
+        title: "Phone scan received",
+        description:
+          "It's waiting in the Received scans list — finish this screen first, then tap it there.",
+      });
+      return;
+    }
+    switch (ev.outcome) {
+      case "registered": {
+        if (!ev.order) break;
+        const registered = ev.order;
+        setOrder(registered);
+        setWarnings(ev.warnings ?? []);
+        setNote(`Scanned from a phone at ${formatTime(ev.ts)} — order registered.`);
+        setPhase("result");
+        toast({
+          title: "✓ Order registered (phone scan)",
+          description: `${shortOrderId(registered.orderId)} · ${callOutName(registered)} · ${formatPeso(registered.total)} · ${paymentMethodLabel(registered.paymentMethod)}.${(ev.warnings ?? []).length > 0 ? " Check the warnings." : ""}`,
+        });
+        return;
+      }
+      case "lookup-waiting": {
+        if (!ev.order) break;
+        const found = ev.order;
+        setOrder(found);
+        setWarnings([]);
+        setNote(`Scanned from a phone at ${formatTime(ev.ts)} — already in line.`);
+        setPhase("result");
+        toast({
+          title: "Already in line (phone scan)",
+          description: `${shortOrderId(found.orderId)} · ${callOutName(found)} · registered earlier.`,
+        });
+        return;
+      }
+      case "lookup-served":
+      case "lookup-aborted": {
+        if (!ev.order) break;
+        setDoneErrorCard(ev.order);
+        return;
+      }
+      case "not-found":
+        setPhase("error");
+        setErrorInfo({
+          kind: "not-found",
+          title: "Order not registered yet",
+          message:
+            ev.message ?? "No registered order matches the ID the phone scanned.",
+        });
+        return;
+      case "invalid":
+        setPhase("error");
+        setErrorInfo({
+          kind: "invalid",
+          title: "Invalid QR code",
+          message:
+            ev.message ??
+            `The phone scanned something that is not a Coffee++ order (“${ev.preview}…”).`,
+        });
+        return;
+      case "error":
+        setPhase("error");
+        setErrorInfo({
+          kind: "error",
+          title: "Scan rejected",
+          message: ev.message ?? "The order could not be registered.",
+        });
+        return;
+    }
+    // Event without order data (shouldn't happen) — surface it honestly.
+    setPhase("error");
+    setErrorInfo({
+      kind: "error",
+      title: "Phone scan result incomplete",
+      message:
+        ev.message ?? "The scan result arrived without order details — try tapping it again.",
+    });
+  }
+
   function submitManual(e: React.FormEvent) {
     e.preventDefault();
     if (phase === "looking-up") return;
@@ -750,7 +850,7 @@ export default function Scanner() {
     <div>
       <ViewHeader
         title="Scanner"
-        description="Scan a customer's Order QR to register their order — it carries their call-out name, email, items and total. The camera stays live the whole time, so you can scan back-to-back without closing anything. Want more of the same order? Scan the same QR again — each scan adds another copy. No camera? Paste the payload or type the Order ID below."
+        description="Scan a customer's Order QR to register their order — it carries their call-out name, email, items and total. The camera stays live the whole time, so you can scan back-to-back without closing anything. Want more of the same order? Scan the same QR again — each scan adds another copy. No camera? Paste the payload or type the Order ID below — or open the hotspot and scan with a phone."
       />
 
       {/* Scanner + customer web-menu QR — side by side as a centered pair
@@ -855,6 +955,14 @@ export default function Scanner() {
               is assigned automatically.
             </p>
           </div>
+
+          {/* Phone-scanner hotspot — the SECOND scanning option. A phone
+              joined to this laptop's Wi-Fi hotspot scans customer Order
+              QRs with the phone camera and POSTs the decoded text to this
+              admin app (fully offline — the laptop is the local server and
+              source of truth). Received scans flow into the same result
+              card + SERVE/ABORT flow above; the camera is never affected. */}
+          <HotspotPanel onScanEvent={applyPhoneEvent} />
         </div>
 
         {/* Customer web-menu QR — to the LEFT of the scanner; walk-bys scan
