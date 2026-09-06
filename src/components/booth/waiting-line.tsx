@@ -1,6 +1,10 @@
 "use client";
 
 // Waiting Line — live queue of scanned orders, refetched every 8 seconds.
+// The line is strictly FIFO (first in, first out): the order scanned FIRST
+// is always listed at the top as #1 / "next to serve", and every card shows
+// its queue-position index number so staff always know whose turn it is and
+// how many orders come after it.
 
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -9,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
 import { CopyEmailButton } from "@/components/shared/copy-email-button";
 import { EmptyState } from "@/components/shared/empty-state";
 import {
@@ -43,22 +48,35 @@ export default function WaitingLine({
     refetchInterval: 8000,
   });
 
+  // FIFO queue: order scanned earliest comes first (#1 = next to serve),
+  // so the line always flows fairly — first in, first out.
   const waiting = React.useMemo(() => {
     const list = asList<Order>(data, "orders");
     return [...list].sort((a, b) => {
       const ta = a.scannedAt ?? a.createdAt;
       const tb = b.scannedAt ?? b.createdAt;
-      return ta < tb ? 1 : ta > tb ? -1 : 0;
+      return ta < tb ? -1 : ta > tb ? 1 : 0;
     });
   }, [data]);
 
   const count = waiting.length;
 
+  // Minutes since the order joined the line ("waiting 4 min").
+  const waitedLabel = (o: Order): string => {
+    const joined = Date.parse(o.scannedAt ?? o.createdAt);
+    if (Number.isNaN(joined)) return "";
+    const mins = Math.max(0, Math.round((Date.now() - joined) / 60_000));
+    if (mins < 1) return "just joined";
+    if (mins < 60) return `waiting ${mins} min`;
+    const h = Math.floor(mins / 60);
+    return `waiting ${h}h ${mins % 60}m`;
+  };
+
   return (
     <div>
       <ViewHeader
         title="Waiting Line"
-        description="Orders scanned and waiting to be prepared — refreshes automatically."
+        description="First in, first out — orders line up in scan order and are served fairly. Refreshes automatically."
         action={
           <Badge
             variant="secondary"
@@ -104,24 +122,62 @@ export default function WaitingLine({
         />
       ) : (
         <div className="max-h-[70vh] space-y-3 overflow-y-auto pr-1 scroll-thin">
-          {waiting.map((o, i) => (
-            <Card
-              key={o.orderId}
-              className="gap-3 py-4 animate-in fade-in slide-in-from-bottom-1 duration-200"
-              style={{ animationDelay: `${Math.min(i, 6) * 40}ms` }}
-            >
-              <CardContent className="space-y-3 px-4">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-display text-2xl font-bold leading-none text-foreground">
-                      {shortOrderId(o.orderId)}
+          {waiting.map((o, i) => {
+            const position = i + 1; // queue index: 1 = first in, first out
+            const isFirst = position === 1;
+            const waited = waitedLabel(o);
+            return (
+              <Card
+                key={o.orderId}
+                className={cn(
+                  "gap-3 py-4 animate-in fade-in slide-in-from-bottom-1 duration-200",
+                  isFirst && count > 1 && "border-primary/60 shadow-sm ring-1 ring-primary/25"
+                )}
+                style={{ animationDelay: `${Math.min(i, 6) * 40}ms` }}
+              >
+                <CardContent className="space-y-3 px-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex min-w-0 items-start gap-3">
+                      {/* Queue position ticket — 1 = scanned first = next to serve */}
+                      <div
+                        className={cn(
+                          "flex h-12 w-12 shrink-0 flex-col items-center justify-center gap-0.5 rounded-xl border",
+                          isFirst
+                            ? "border-primary bg-primary text-primary-foreground"
+                            : "border-primary/25 bg-primary/10 text-primary"
+                        )}
+                        aria-hidden
+                      >
+                        <span className="text-[8px] font-bold uppercase tracking-widest leading-none opacity-80">
+                          {isFirst ? "next" : "in line"}
+                        </span>
+                        <span className="font-display text-xl font-black leading-none">
+                          {position}
+                        </span>
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-display text-2xl font-bold leading-none text-foreground">
+                            {shortOrderId(o.orderId)}
+                          </span>
+                          <OrderStatusBadge status={o.orderStatus} />
+                          {isFirst && (
+                            <Badge className="gap-1 bg-primary text-primary-foreground">
+                              <Volume2 className="h-3 w-3" aria-hidden />
+                              First order — serve this next
+                            </Badge>
+                          )}
+                        </div>
+                        <p className={cn("mt-1 text-xs font-medium", waited ? "text-muted-foreground" : "sr-only")}>
+                          Position {position} of {count} in line
+                          {waited ? ` · ${waited}` : ""}
+                        </p>
+                      </div>
+                    </div>
+                    <span className="shrink-0 text-lg font-bold text-foreground">
+                      {formatPeso(o.total)}
                     </span>
-                    <OrderStatusBadge status={o.orderStatus} />
                   </div>
-                  <span className="text-lg font-bold text-foreground">
-                    {formatPeso(o.total)}
-                  </span>
-                </div>
 
                 {/* Hero — the name the staff calls out, big & bold like the order number */}
                 <div className="rounded-lg border border-primary/25 bg-primary/5 px-3 py-2.5">
@@ -195,7 +251,8 @@ export default function WaitingLine({
                 </div>
               </CardContent>
             </Card>
-          ))}
+            );
+          })}
         </div>
       )}
 

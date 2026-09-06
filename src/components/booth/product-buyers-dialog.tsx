@@ -310,6 +310,13 @@ export function ProductBuyersDialog({
 
   const totalUnits = sorted.reduce((sum, r) => sum + r.quantity, 0);
   const totalItemRevenue = sorted.reduce((sum, r) => sum + r.subtotal, 0);
+  /* Customers ≠ rows since the smarter ordering update: an order can carry
+     a HOT and a COLD line for the same product, so one customer may occupy
+     two rows (one per temperature). Count people by unique order. */
+  const uniqueCustomers = React.useMemo(
+    () => new Set(sorted.map((r) => r.orderId)).size,
+    [sorted]
+  );
 
   /* Export handlers — Excel is the primary format (auto-fit columns so
      nothing is cut off in Excel); CSV stays available as plain text. */
@@ -319,7 +326,7 @@ export function ProductBuyersDialog({
       await exportBuyersExcel(product, sorted);
       toast({
         title: "✓ Excel downloaded",
-        description: `${sorted.length} ${sorted.length === 1 ? "customer" : "customers"} — columns auto-fit, filters included.`,
+        description: `${sorted.length} ${sorted.length === 1 ? "row" : "rows"} (${uniqueCustomers} ${uniqueCustomers === 1 ? "customer" : "customers"}) — columns auto-fit, filters included.`,
       });
     } catch {
       toast({
@@ -335,7 +342,7 @@ export function ProductBuyersDialog({
     exportBuyersCsv(product, sorted);
     toast({
       title: "✓ CSV downloaded",
-      description: `${sorted.length} ${sorted.length === 1 ? "customer" : "customers"}.`,
+      description: `${sorted.length} ${sorted.length === 1 ? "row" : "rows"} (${uniqueCustomers} ${uniqueCustomers === 1 ? "customer" : "customers"}).`,
     });
   }
 
@@ -477,8 +484,13 @@ export function ProductBuyersDialog({
             <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
               <span className="inline-flex items-center gap-1.5">
                 <Users className="h-3.5 w-3.5" aria-hidden />
-                <strong className="text-foreground">{sorted.length}</strong>{" "}
-                {sorted.length === 1 ? "customer" : "customers"}
+                <strong className="text-foreground">{uniqueCustomers}</strong>{" "}
+                {uniqueCustomers === 1 ? "customer" : "customers"}
+                {sorted.length !== uniqueCustomers && (
+                  <span className="font-normal text-muted-foreground">
+                    {" "}· {sorted.length} {sorted.length === 1 ? "line" : "lines"} (hot/cold split)
+                  </span>
+                )}
               </span>
               <span>
                 <strong className="text-foreground">{totalUnits}</strong>{" "}

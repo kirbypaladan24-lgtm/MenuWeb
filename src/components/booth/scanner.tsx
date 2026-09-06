@@ -61,7 +61,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   OrderStatusBadge,
   PaymentStatusBadge,
@@ -83,7 +82,6 @@ import type {
   OrderStatus,
   PaymentMethod,
   Product,
-  Temperature,
 } from "@/lib/types";
 import { asList, callOutName, unwrapOrder, useApiError } from "./booth-utils";
 import { ViewHeader } from "./view-header";
@@ -117,7 +115,11 @@ interface ManualOrderDialogProps {
 
 function ManualOrderDialog({ open, onOpenChange, onRegister }: ManualOrderDialogProps) {
   const [productId, setProductId] = React.useState("");
-  const [temp, setTemp] = React.useState<Temperature>("HOT");
+  // Same smarter ordering as the customer site: temperature products get
+  // SEPARATE steppers — one count for HOT, one for COLD — so one walk-in
+  // order can mix (2 hot + 1 cold = two line items).
+  const [hotQty, setHotQty] = React.useState(0);
+  const [coldQty, setColdQty] = React.useState(0);
   const [qty, setQty] = React.useState(1);
   const [name, setName] = React.useState("");
   const [alias, setAlias] = React.useState("");
@@ -132,12 +134,16 @@ function ManualOrderDialog({ open, onOpenChange, onRegister }: ManualOrderDialog
   });
   const products = React.useMemo(() => asList<Product>(data, "products"), [data]);
   const selected = products.find((p) => p.id === productId) ?? null;
+  const hasTemp = selected?.hasTemperature ?? false;
+  const tempCount = hotQty + coldQty;
+  const unitCount = hasTemp ? tempCount : qty;
 
   // Reset the form every time the dialog is (re)opened.
   React.useEffect(() => {
     if (open) {
       setProductId("");
-      setTemp("HOT");
+      setHotQty(0);
+      setColdQty(0);
       setQty(1);
       setName("");
       setAlias("");
@@ -150,7 +156,9 @@ function ManualOrderDialog({ open, onOpenChange, onRegister }: ManualOrderDialog
 
   function selectProduct(id: string) {
     setProductId(id);
-    setQty(1); // predictable reset per product
+    setHotQty(0); // predictable reset per product
+    setColdQty(0);
+    setQty(1);
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -173,23 +181,37 @@ function ManualOrderDialog({ open, onOpenChange, onRegister }: ManualOrderDialog
       setEmailError(null);
     }
     if (!selected || !valid) return;
+    if (selected.hasTemperature && tempCount < 1) return; // guarded below
 
     // No id — the server assigns the next sequential ORD-####.
-    const subtotal = selected.price * qty;
+    // Temperature products → one line per temperature with its own count
+    // (2 HOT + 1 COLD = two items — the same shape the customer site
+    // produces, so every system interprets it identically).
+    const items: QrOrderPayload["items"] = selected.hasTemperature
+      ? [
+          ...(hotQty > 0
+            ? [{ pid: selected.id, q: hotQty, n: selected.name, t: "HOT", s: selected.price * hotQty }]
+            : []),
+          ...(coldQty > 0
+            ? [{ pid: selected.id, q: coldQty, n: selected.name, t: "COLD", s: selected.price * coldQty }]
+            : []),
+        ]
+      : [
+          {
+            pid: selected.id,
+            q: qty,
+            n: selected.name,
+            t: selected.defaultTemperature ?? null,
+            s: selected.price * qty,
+          },
+        ];
+    const subtotal = selected.price * (selected.hasTemperature ? tempCount : qty);
     const payload: QrOrderPayload = {
       v: 1,
       name: trimmedName,
       ...(trimmedAlias !== "" ? { alias: trimmedAlias } : {}),
       email: trimmedEmail,
-      items: [
-        {
-          pid: selected.id,
-          q: qty,
-          n: selected.name,
-          t: selected.hasTemperature ? temp : (selected.defaultTemperature ?? null),
-          s: subtotal,
-        },
-      ],
+      items,
       total: subtotal,
       pay,
     };
@@ -234,26 +256,108 @@ function ManualOrderDialog({ open, onOpenChange, onRegister }: ManualOrderDialog
             )}
           </div>
 
-          {/* Temperature — fixed-temp items show what the customer gets */}
+          {/* Hot & Cold counts — a separate stepper per temperature.          */}
+          {/* One walk-in order can mix: 2 hot + 1 cold = two line items.      */}
           {selected?.hasTemperature && (
             <div className="grid gap-2">
-              <Label>Temperature</Label>
-              <ToggleGroup
-                type="single"
-                value={temp}
-                onValueChange={(v) => {
-                  if (v === "HOT" || v === "COLD") setTemp(v);
-                }}
-                className="w-full"
-                variant="outline"
+              <span
+                id="manual-temp-counts-label"
+                className="text-sm font-medium leading-none text-foreground"
               >
-                <ToggleGroupItem value="HOT" className="h-11 flex-1 text-sm font-semibold" aria-label="Hot">
-                  HOT
-                </ToggleGroupItem>
-                <ToggleGroupItem value="COLD" className="h-11 flex-1 text-sm font-semibold" aria-label="Cold">
-                  COLD
-                </ToggleGroupItem>
-              </ToggleGroup>
+                How many? — set each temperature
+              </span>
+              <div
+                className="grid gap-2"
+                role="group"
+                aria-labelledby="manual-temp-counts-label"
+              >
+                {/* HOT row */}
+                <div className="flex h-12 items-center gap-2 rounded-md border border-warning/40 bg-warning/10 pl-3">
+                  <span className="shrink-0 text-sm font-bold text-warning-foreground">
+                    HOT
+                  </span>
+                  <div className="ml-auto flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-9 w-9"
+                      onClick={() => setHotQty((q) => Math.max(0, q - 1))}
+                      disabled={hotQty <= 0}
+                      aria-label="Decrease hot count"
+                    >
+                      <Minus aria-hidden />
+                    </Button>
+                    <span
+                      className="w-8 text-center text-lg font-bold tabular-nums"
+                      aria-live="polite"
+                    >
+                      {hotQty}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-9 w-9"
+                      onClick={() => setHotQty((q) => q + 1)}
+                      aria-label="Increase hot count"
+                    >
+                      <Plus aria-hidden />
+                    </Button>
+                    <span
+                      className="w-16 text-right text-xs font-semibold tabular-nums text-muted-foreground"
+                      aria-label={`Hot subtotal ${formatPeso(selected.price * hotQty)}`}
+                    >
+                      {hotQty > 0 ? formatPeso(selected.price * hotQty) : "—"}
+                    </span>
+                  </div>
+                </div>
+                {/* COLD row */}
+                <div className="flex h-12 items-center gap-2 rounded-md border border-secondary bg-secondary/50 pl-3">
+                  <span className="shrink-0 text-sm font-bold text-secondary-foreground">
+                    COLD
+                  </span>
+                  <div className="ml-auto flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-9 w-9"
+                      onClick={() => setColdQty((q) => Math.max(0, q - 1))}
+                      disabled={coldQty <= 0}
+                      aria-label="Decrease cold count"
+                    >
+                      <Minus aria-hidden />
+                    </Button>
+                    <span
+                      className="w-8 text-center text-lg font-bold tabular-nums"
+                      aria-live="polite"
+                    >
+                      {coldQty}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-9 w-9"
+                      onClick={() => setColdQty((q) => q + 1)}
+                      aria-label="Increase cold count"
+                    >
+                      <Plus aria-hidden />
+                    </Button>
+                    <span
+                      className="w-16 text-right text-xs font-semibold tabular-nums text-muted-foreground"
+                      aria-label={`Cold subtotal ${formatPeso(selected.price * coldQty)}`}
+                    >
+                      {coldQty > 0 ? formatPeso(selected.price * coldQty) : "—"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Mix and match — separate counts for hot and cold, no limit.
+              </p>
+              {tempCount < 1 && (
+                <p className="text-xs font-medium text-destructive" role="alert">
+                  Set a count for at least one — hot or cold.
+                </p>
+              )}
             </div>
           )}
           {!selected?.hasTemperature && selected?.defaultTemperature && (
@@ -265,41 +369,43 @@ function ManualOrderDialog({ open, onOpenChange, onRegister }: ManualOrderDialog
             </p>
           )}
 
-          {/* Quantity */}
-          <div className="grid gap-2">
-            <span className="text-sm font-medium leading-none text-foreground">
-              Quantity
-            </span>
-            <div className="flex items-center gap-3">
-              <Button
-                type="button"
-                variant="outline"
-                className="h-11 w-11"
-                onClick={() => setQty((q) => Math.max(1, q - 1))}
-                disabled={qty <= 1}
-                aria-label="Decrease quantity"
-              >
-                <Minus aria-hidden />
-              </Button>
-              <span
-                id="manual-qty"
-                className="w-10 text-center text-xl font-bold tabular-nums"
-                aria-live="polite"
-              >
-                {qty}
+          {/* Quantity — only for items WITHOUT a temperature choice */}
+          {selected && !selected.hasTemperature && (
+            <div className="grid gap-2">
+              <span className="text-sm font-medium leading-none text-foreground">
+                Quantity
               </span>
-              <Button
-                type="button"
-                variant="outline"
-                className="h-11 w-11"
-                onClick={() => setQty((q) => q + 1)}
-                aria-label="Increase quantity"
-              >
-                <Plus aria-hidden />
-              </Button>
-              <span className="text-xs text-muted-foreground">no limit</span>
+              <div className="flex items-center gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-11 w-11"
+                  onClick={() => setQty((q) => Math.max(1, q - 1))}
+                  disabled={qty <= 1}
+                  aria-label="Decrease quantity"
+                >
+                  <Minus aria-hidden />
+                </Button>
+                <span
+                  id="manual-qty"
+                  className="w-10 text-center text-xl font-bold tabular-nums"
+                  aria-live="polite"
+                >
+                  {qty}
+                </span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-11 w-11"
+                  onClick={() => setQty((q) => q + 1)}
+                  aria-label="Increase quantity"
+                >
+                  <Plus aria-hidden />
+                </Button>
+                <span className="text-xs text-muted-foreground">no limit</span>
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Call-out name (optional — what the staff shouts) */}
           <div className="grid gap-2">
@@ -395,10 +501,14 @@ function ManualOrderDialog({ open, onOpenChange, onRegister }: ManualOrderDialog
           {/* Total */}
           <div className="flex items-center justify-between rounded-lg bg-secondary px-3 py-2.5">
             <span className="text-sm font-medium text-secondary-foreground">
-              Total{selected ? ` — ${qty} × ${formatPeso(selected.price)}` : ""}
+              {selected
+                ? hasTemp
+                  ? `Total — ${hotQty} hot + ${coldQty} cold`
+                  : `Total — ${qty} × ${formatPeso(selected.price)}`
+                : "Total"}
             </span>
             <span className="text-lg font-bold text-secondary-foreground">
-              {selected ? formatPeso(selected.price * qty) : "—"}
+              {selected ? formatPeso(selected.price * unitCount) : "—"}
             </span>
           </div>
 
@@ -408,7 +518,11 @@ function ManualOrderDialog({ open, onOpenChange, onRegister }: ManualOrderDialog
                 Cancel
               </Button>
             </DialogClose>
-            <Button type="submit" className="h-11 flex-1 font-semibold" disabled={!selected}>
+            <Button
+              type="submit"
+              className="h-11 flex-1 font-semibold"
+              disabled={!selected || (hasTemp && tempCount < 1)}
+            >
               <ClipboardList aria-hidden />
               Create Order
             </Button>

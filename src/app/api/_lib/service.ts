@@ -254,9 +254,10 @@ export async function listOrders(opts: ListOrdersOptions): Promise<Order[]> {
 
 /**
  * Every customer who bought `productId`, newest orders first.
- * One row per (order, product) pair — an order containing the product
- * appears once, with the product's own quantity / temperature / subtotal
- * plus the order's full customer credentials.
+ * One row per ORDER LINE — since the smarter ordering update an order can
+ * carry a separate HOT and a COLD line for the same product, so that order
+ * appears twice (once per temperature, each with its own quantity /
+ * subtotal) plus the order's full customer credentials.
  */
 export async function listProductBuyers(productId: string): Promise<ProductBuyer[]> {
   const rows = await db.orderItem.findMany({

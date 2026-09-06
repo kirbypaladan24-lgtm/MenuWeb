@@ -17,9 +17,10 @@
 //      whole time.
 //
 // The open panel is deliberately BIG: it owns the full-width strip under
-// the scanner pair and shows two large QR codes — "join the Wi-Fi" (the
-// phone's camera app reads it and connects) and "the scanner server link"
-// (the web link the phone app talks to).
+// the scanner pair and shows the large "scanner server link" QR (the web
+// link the phone app talks to). Joining the booth Wi-Fi itself is done by
+// hand on the phone — the operator types the real hotspot password — so
+// no join-the-Wi-Fi QR or credentials are shown here.
 //
 // The panel polls /api/hotspot/status (withEvents=1) every 2s while open,
 // remembers the booth's Wi-Fi name/password in localStorage, and collapses
@@ -79,16 +80,6 @@ function randomPassword(len = 8): string {
   const bytes = new Uint32Array(len);
   window.crypto.getRandomValues(bytes);
   return Array.from(bytes, (n) => PASSWORD_CHARS[n % PASSWORD_CHARS.length]).join("");
-}
-
-/** Escape the reserved characters of the Wi-Fi QR payload format. */
-function wifiEscape(value: string): string {
-  return value.replace(/([\\;,:"])/g, "\\$1");
-}
-
-/** Standard "join this Wi-Fi" QR payload (iOS/Android camera apps read it). */
-function wifiQrPayload(ssid: string, password: string): string {
-  return `WIFI:T:WPA;S:${wifiEscape(ssid)};P:${wifiEscape(password)};;`;
 }
 
 function lastSeenLabel(iso: string): string {
@@ -294,7 +285,6 @@ export function HotspotPanel({ onScanEvent }: HotspotPanelProps) {
   const [customize, setCustomize] = React.useState(false);
   const [ssid, setSsid] = React.useState(DEFAULT_SSID);
   const [password, setPassword] = React.useState("");
-  const [wifiQrSrc, setWifiQrSrc] = React.useState<string | null>(null);
   const [serverQrSrc, setServerQrSrc] = React.useState<string | null>(null);
 
   // Load the booth's remembered Wi-Fi values (or generate a fresh password).
@@ -398,10 +388,11 @@ export function HotspotPanel({ onScanEvent }: HotspotPanelProps) {
     };
   }, [session?.active]);
 
-  // The two big QRs: (1) join-the-Wi-Fi, (2) the scanner server web link.
+  // The one big QR: the scanner server web link the phone app needs.
+  // (Joining the booth Wi-Fi is done by hand on the phone — with the real
+  // hotspot password — so no join-the-Wi-Fi QR is shown here.)
   React.useEffect(() => {
     if (!session?.active) {
-      setWifiQrSrc(null);
       setServerQrSrc(null);
       return;
     }
@@ -412,13 +403,6 @@ export function HotspotPanel({ onScanEvent }: HotspotPanelProps) {
       errorCorrectionLevel: "M" as const,
       color: { dark: "#000000FF", light: "#FFFFFFFF" },
     };
-    QRCode.toDataURL(wifiQrPayload(session.ssid, session.password), opts)
-      .then((src) => {
-        if (!cancelled) setWifiQrSrc(src);
-      })
-      .catch(() => {
-        if (!cancelled) setWifiQrSrc(null);
-      });
     const serverUrl = session.urls[0] ?? "";
     if (serverUrl !== "") {
       QRCode.toDataURL(serverUrl, opts)
@@ -434,7 +418,7 @@ export function HotspotPanel({ onScanEvent }: HotspotPanelProps) {
     return () => {
       cancelled = true;
     };
-  }, [session?.active, session?.ssid, session?.password, session?.urls]);
+  }, [session?.active, session?.urls]);
 
   async function openHotspot() {
     if (busy !== null) return;
@@ -649,105 +633,64 @@ export function HotspotPanel({ onScanEvent }: HotspotPanelProps) {
       </CardHeader>
 
       <CardContent className="space-y-5">
-        {/* The two big setup steps, side by side on wide screens.
-            Each carries a LARGE scannable QR so the phone is configured
-            with its own camera — no typing. */}
-        <div className="grid gap-4 md:grid-cols-2">
-          {/* 1 — join the Wi-Fi */}
-          <section className="rounded-xl border bg-secondary/30 p-4">
-            <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-              Phone setup · 1 — join the Wi-Fi
-            </p>
-            <div className="mt-3 flex flex-col items-center gap-4 sm:flex-row">
-              <QrTile
-                src={wifiQrSrc}
-                alt={`QR code that joins the ${session.ssid} Wi-Fi network`}
-                label="Scan to join"
-              />
-              <div className="w-full min-w-0 flex-1 space-y-2">
-                <p className="text-[11px] leading-relaxed text-muted-foreground">
-                  Scan with the phone&apos;s camera app — it joins instantly. Or type:
+        {/* The one phone-setup step: this laptop's server link. Joining the
+            booth Wi-Fi is done by hand on the phone (Wi-Fi settings + the
+            real hotspot password), so the panel doesn't show credentials. */}
+        <section className="rounded-xl border bg-secondary/30 p-4">
+          <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+            Phone setup — scanner server link
+          </p>
+          <div className="mt-3 flex flex-col items-center gap-4 sm:flex-row">
+            <QrTile
+              src={serverQrSrc}
+              alt={
+                primaryUrl
+                  ? `QR code of the scanner server web link ${primaryUrl}`
+                  : "QR code of the scanner server web link"
+              }
+              label="Scan the link"
+            />
+            <div className="w-full min-w-0 flex-1 space-y-2">
+              <p className="text-[11px] leading-relaxed text-muted-foreground">
+                Join the booth Wi-Fi on the phone first (Android settings, the
+                real hotspot password), then let the phone scanner app scan
+                this link — or type it — once in its settings:
+              </p>
+              {primaryUrl ? (
+                <div className="flex min-h-11 items-center justify-between gap-2 rounded-lg border px-3 py-1.5">
+                  <span className="min-w-0 truncate font-mono text-sm font-bold text-foreground">
+                    {primaryUrl}
+                  </span>
+                  <span className="flex shrink-0 items-center gap-2">
+                    {session.urls.length > 1 && (
+                      <Badge variant="secondary">most likely</Badge>
+                    )}
+                    <CopyValueButton value={primaryUrl} ariaLabel="Copy the server address" />
+                  </span>
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  No local address found yet — it appears once the laptop joins a network.
                 </p>
-                <dl className="space-y-1.5 text-sm">
-                  <div className="flex items-center justify-between gap-2">
-                    <dt className="shrink-0 text-muted-foreground">Wi-Fi name</dt>
-                    <dd className="flex min-w-0 items-center gap-1">
-                      <span className="truncate font-semibold text-foreground">
-                        {session.ssid}
+              )}
+              {otherUrls.length > 0 && (
+                <ul className="space-y-1">
+                  {otherUrls.map((url) => (
+                    <li
+                      key={url}
+                      className="flex min-h-9 items-center justify-between gap-2 rounded-lg border border-dashed px-3 py-1"
+                    >
+                      <span className="min-w-0 truncate font-mono text-xs text-muted-foreground">
+                        {url}
                       </span>
-                      <CopyValueButton value={session.ssid} ariaLabel="Copy the Wi-Fi name" />
-                    </dd>
-                  </div>
-                  <div className="flex items-center justify-between gap-2">
-                    <dt className="shrink-0 text-muted-foreground">Password</dt>
-                    <dd className="flex min-w-0 items-center gap-1">
-                      <span className="truncate font-mono font-semibold text-foreground">
-                        {session.password}
-                      </span>
-                      <CopyValueButton value={session.password} ariaLabel="Copy the Wi-Fi password" />
-                    </dd>
-                  </div>
-                </dl>
-              </div>
+                      <CopyValueButton value={url} ariaLabel="Copy the alternate server address" />
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
-          </section>
-
-          {/* 2 — the scanner server web link */}
-          <section className="rounded-xl border bg-secondary/30 p-4">
-            <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-              Phone setup · 2 — scanner server link
-            </p>
-            <div className="mt-3 flex flex-col items-center gap-4 sm:flex-row">
-              <QrTile
-                src={serverQrSrc}
-                alt={
-                  primaryUrl
-                    ? `QR code of the scanner server web link ${primaryUrl}`
-                    : "QR code of the scanner server web link"
-                }
-                label="Scan the link"
-              />
-              <div className="w-full min-w-0 flex-1 space-y-2">
-                <p className="text-[11px] leading-relaxed text-muted-foreground">
-                  This laptop&apos;s address on the hotspot — the phone scanner app
-                  scans it (or types it) once in its settings:
-                </p>
-                {primaryUrl ? (
-                  <div className="flex min-h-11 items-center justify-between gap-2 rounded-lg border px-3 py-1.5">
-                    <span className="min-w-0 truncate font-mono text-sm font-bold text-foreground">
-                      {primaryUrl}
-                    </span>
-                    <span className="flex shrink-0 items-center gap-2">
-                      {session.urls.length > 1 && (
-                        <Badge variant="secondary">most likely</Badge>
-                      )}
-                      <CopyValueButton value={primaryUrl} ariaLabel="Copy the server address" />
-                    </span>
-                  </div>
-                ) : (
-                  <p className="text-xs text-muted-foreground">
-                    No local address found yet — it appears once the laptop joins a network.
-                  </p>
-                )}
-                {otherUrls.length > 0 && (
-                  <ul className="space-y-1">
-                    {otherUrls.map((url) => (
-                      <li
-                        key={url}
-                        className="flex min-h-9 items-center justify-between gap-2 rounded-lg border border-dashed px-3 py-1"
-                      >
-                        <span className="min-w-0 truncate font-mono text-xs text-muted-foreground">
-                          {url}
-                        </span>
-                        <CopyValueButton value={url} ariaLabel="Copy the alternate server address" />
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            </div>
-          </section>
-        </div>
+          </div>
+        </section>
 
         {/* Manual setup steps / auto-setup status */}
         {session.mode === "manual" && session.instructions ? (

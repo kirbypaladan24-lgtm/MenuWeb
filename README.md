@@ -51,19 +51,32 @@ protection. The publishable half is the separate `coffeepp-client` site.
      scan with a phone instead — see the next section.
    - Walk-in customer? **Manual Order** — pick products, enter what to call
      them + their name, assign payment; the ID is generated for you.
-2. **Waiting Line** — live queue of registered orders (auto-refreshes). Each
-   card leads with the **call-out name in big bold type** (same weight as the
-   order number) — that's what the staff shouts when the drink is ready.
+     Products with a Hot / Cold choice get **separate HOT and COLD
+     steppers** — set each count (2 hot + 1 cold in one order); the order
+     is stored as one line per temperature, exactly the shape the customer
+     site produces, so every system interprets it the same way.
+2. **Waiting Line** — the live queue of registered orders (auto-refreshes).
+   It is a strict **first-in, first-out line**: the order scanned earliest is
+   always at the top, so orders flow fairly. Every card leads with its
+   **queue-position number** — a big ticket badge showing **1** (labeled
+   “next”), **2**, **3**, … — plus a “Position X of Y in line” line and how
+   long the order has been waiting, so staff always know whose turn it is
+   and who comes next. The first card also carries a **“First order — serve
+   this next”** badge (serving it promotes #2 to the top automatically).
+   Each card shows the **call-out name in big bold type** — that's what the
+   staff shouts when the drink is ready.
 3. **Serve** when the order is handed over (marks PAID, counts as a sale) —
    or **Abort** with a reason (never counted as a sale).
    GCash payments are verified manually at this point.
 4. **Dashboard** — revenue, the **Total Cost box**, net profit, ROI, best
    sellers, HOT vs COLD, GCash vs Booth, daily sales.
    The **Products** grid lists every product with its photo and name —
-   **press a product to see the customers who bought it**: one table row per
-   order with the call-out name, name, email, quantity, temperature, this
+   **press a product to see the customers who bought it**: one row per order
+   line with the call-out name, name, email, quantity, temperature, this
    item's subtotal, the order total, payment method + status, order status
-   and dates. Search it, filter by status, click any column to sort, or
+   and dates. An order with a hot line and a cold line for the same drink
+   shows two rows (one per temperature) — the header counts customers
+   separately from lines, so nobody is double-counted. Search it, filter by status, click any column to sort, or
    export the current view. **Excel** is the primary export: every
    column is auto-fitted to its longest cell (long emails and names are
    never cut off in Excel), the header row gets Excel filter dropdowns,
@@ -80,8 +93,10 @@ protection. The publishable half is the separate `coffeepp-client` site.
 The **Scanner** view has a second scanning option for when the laptop camera
 can't keep up (glare, slow autofocus, tiny QRs): press **Open Hotspot** and a
 separate **phone scanner app** becomes the camera. The panel sits full-width
-below the scanner and shows **two large QR codes** — one that joins the phone
-to the Wi-Fi, one that hands the scanner app the server link.
+below the scanner and shows **one large QR code** — the **scanner server
+link** the phone app needs. Joining the booth Wi-Fi itself is done **by hand
+on the phone** (Android Wi-Fi settings → the booth's hotspot → the real
+hotspot password).
 
 1. **Open Hotspot** (the big panel under the scanner). The laptop's **real
    Wi-Fi hotspot** comes up automatically — it pops up in nearby devices'
@@ -97,12 +112,17 @@ to the Wi-Fi, one that hands the scanner app the server link.
      way. If every automatic attempt fails, the panel shows the exact
      reason — connecting the laptop to *any* network (Wi-Fi or Ethernet)
      and pressing Open Hotspot again usually lets Windows share it.
-2. The panel shows the **Wi-Fi name + password** (remembered between
-   sessions, plus a **join-QR** the phone's stock camera app can scan) and
-   the **scanner server link** (`http://192.168.137.1:3001` on Windows,
-   `http://10.42.0.1:3001` on Linux) — also as a **big scannable QR**.
-3. Join the phone to that Wi-Fi and point the scanner app at the server
-   link (scan the QR). Every QR the phone decodes is sent to this laptop and
+2. The panel shows the **scanner server link**
+   (`http://192.168.137.1:3001` on Windows, `http://10.42.0.1:3001` on
+   Linux) as a **big scannable QR**, plus copyable alternate addresses. The
+   Wi-Fi name/password are remembered between sessions — the ⚙ button
+   customizes them before opening (auto mode applies them to the real
+   hotspot) — but they are no longer shown as a join-QR; the phone joins
+   the Wi-Fi by hand with the real hotspot password.
+3. Join the phone to that Wi-Fi by hand (Android settings → the booth's
+   hotspot name → the real password), then point the scanner app at the
+   server link (scan the QR in its Settings, or type the address). Every QR
+   the phone decodes is sent to this laptop and
    goes through the **exact same pipeline as the laptop camera** — same
    validation, re-pricing, duplicate-copy behavior — then pops the same
    order card here and lands in the **Received scans** feed. Confirm
