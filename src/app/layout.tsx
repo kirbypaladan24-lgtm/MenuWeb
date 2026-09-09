@@ -22,7 +22,7 @@ export const metadata: Metadata = {
   description:
     "Coffee++ staff-side booth console: scan customer Order QRs, run the waiting line, track sales, net profit and reports.",
   icons: {
-    icon: "/logo.svg",
+    icon: "/logo-cream.svg",
   },
 };
 
@@ -42,7 +42,12 @@ export default function RootLayout({
         <Script id="coffeepp-palette-boot" strategy="beforeInteractive">
           {`(function(){try{var p=localStorage.getItem("coffeepp-admin:palette");if(p==="cozy"||p==="midnight-mint"||p==="espresso"||p==="matcha"||p==="golden-hour"||p==="rosewood"||p==="charcoal"||p==="polar-mint"){document.documentElement.setAttribute("data-palette",p)}}catch(e){}})()`}
         </Script>
-        <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false} enableColorScheme={false}>
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="light"
+          enableSystem={false}
+          enableColorScheme={false}
+        >
           {children}
           <Toaster />
         </ThemeProvider>
