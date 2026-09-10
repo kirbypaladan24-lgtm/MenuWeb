@@ -27,7 +27,7 @@ import OrdersView from "./orders";
 import ProductsView from "./products";
 import ReportsView from "./reports";
 import SettingsView from "./settings";
-import { PauseConsoleModal } from "./pause";
+import { PauseConsoleButton } from "./pause-console";
 
 const NAV_ICONS: Record<BoothView, LucideIcon> = {
   dashboard: LayoutDashboard,
@@ -118,7 +118,7 @@ export default function BoothShell({ view, onNavigate }: BoothShellProps) {
         </nav>
         <div className="space-y-2 border-t p-3">
           {/* Quick palette switch — per-device, saved instantly */}
-          <PauseConsoleModal />
+          <PauseConsoleButton />
           <PaletteMenuButton />
           <div className="flex items-center gap-2.5 pb-1">
             {/* SPECS org seal — the organization running this console */}
