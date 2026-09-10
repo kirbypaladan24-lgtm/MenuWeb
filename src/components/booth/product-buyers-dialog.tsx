@@ -574,8 +574,8 @@ export function ProductBuyersDialog({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {sorted.map((b) => (
-                      <TableRow key={b.orderId}>
+                    {sorted.map((b, i) => (
+                      <TableRow key={`${b.orderId}-${b.temperature ?? "NA"}-${i}`}>
                         <TableCell className="whitespace-nowrap font-semibold text-foreground">
                           {shortOrderId(b.orderId)}
                         </TableCell>
