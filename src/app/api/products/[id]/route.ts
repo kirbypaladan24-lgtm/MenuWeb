@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireRole } from "@/lib/auth";
 import { asBool, asInt, errorResponse, fail, readJson, unauthorized } from "@/app/api/_lib/http";
-import { serializeProduct } from "@/app/api/_lib/service";
+import { parseProductFields, parseProductSizes, serializeProduct, validateFieldList, validateSizeList } from "@/app/api/_lib/service";
 import type { Prisma } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
@@ -72,6 +72,52 @@ export async function PATCH(req: Request, { params }: RouteContext) {
     // Enabling the Hot/Cold choice clears any fixed serving temperature —
     // the field only carries meaning when there is no customer choice.
     if (data.hasTemperature === true) data.defaultTemperature = null;
+    if ("hasSizes" in body) {
+      const b = asBool(body.hasSizes);
+      if (b === null) fail(400, "hasSizes must be a boolean");
+      data.hasSizes = b;
+      // Switching sizes off clears the size menu — stored sizes must never
+      // leak back onto the customer site while the flag is off.
+      if (!b) data.sizes = "[]";
+    }
+    if ("sizes" in body) {
+      const list = validateSizeList(body.sizes);
+      data.sizes = JSON.stringify(list);
+    }
+    // hasSizes on with an empty menu is a broken product — the customer
+    // site would show a size picker with nothing to pick.
+    {
+      const effectiveHasSizes =
+        data.hasSizes === true || (data.hasSizes === undefined && existing.hasSizes);
+      const effectiveSizes =
+        typeof data.sizes === "string" ? parseProductSizes(data.sizes) : parseProductSizes(existing.sizes);
+      if (effectiveHasSizes && effectiveSizes.length === 0) {
+        fail(400, "sizes needs at least 1 entry when hasSizes is true");
+      }
+    }
+    if ("hasFields" in body) {
+      const b = asBool(body.hasFields);
+      if (b === null) fail(400, "hasFields must be a boolean");
+      data.hasFields = b;
+      // Switching custom inputs off clears the defs — stored labels must
+      // never leak back onto the customer site while the flag is off.
+      if (!b) data.fields = "[]";
+    }
+    if ("fields" in body) {
+      const list = validateFieldList(body.fields);
+      data.fields = JSON.stringify(list);
+    }
+    // hasFields on with no inputs is a broken product — the customer site
+    // would show an empty questions block.
+    {
+      const effectiveHasFields =
+        data.hasFields === true || (data.hasFields === undefined && existing.hasFields);
+      const effectiveFields =
+        typeof data.fields === "string" ? parseProductFields(data.fields) : parseProductFields(existing.fields);
+      if (effectiveHasFields && effectiveFields.length === 0) {
+        fail(400, "fields needs at least 1 entry when hasFields is true");
+      }
+    }
     if ("category" in body) {
       if (typeof body.category !== "string" || body.category.trim() === "") {
         fail(400, "category must be a non-empty string");

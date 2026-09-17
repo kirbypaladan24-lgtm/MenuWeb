@@ -110,6 +110,7 @@ async function main() {
       endDate: new Date("2026-09-24T09:30:00.000Z"),
       totalCost: 0,
       gcashNumber: "0917 123 4567",
+      gcashPayment: true,
       specsNumber: "09123456789",
       contactEmail: "parsu.specs@gmail.com",
       clientSiteUrl: "", // set after the client site is deployed — feeds the Scanner QR

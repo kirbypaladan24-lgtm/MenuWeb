@@ -17,8 +17,34 @@ export interface Product {
   hasTemperature: boolean;
   /** Fixed serving temp shown to customers when hasTemperature is false. */
   defaultTemperature: Temperature | null;
+  /** True = customers pick a size; each size carries its own price. */
+  hasSizes: boolean;
+  /** Size options (honored only when hasSizes is true). */
+  sizes: ProductSize[];
+  /** True = customers fill the product's custom inputs at order time. */
+  hasFields: boolean;
+  /** Custom inputs (honored only when hasFields is true). */
+  fields: ProductField[];
   category: string;
   sold: number;
+}
+
+/** One size option: display name + its own peso price. */
+export interface ProductSize {
+  name: string;
+  price: number;
+}
+
+/** One custom input: what to ask + whether an answer is required. */
+export interface ProductField {
+  label: string;
+  required: boolean;
+}
+
+/** One customer answer to a custom input. */
+export interface OrderAnswer {
+  label: string;
+  value: string;
 }
 
 /** Public product (customer view — no sold count) */
@@ -28,6 +54,8 @@ export interface OrderItem {
   productId: string;
   productName: string;
   temperature: Temperature | null;
+  size: string | null; // size name (hasSizes products) — null otherwise
+  answers: OrderAnswer[]; // customer answers (hasFields products) — [] otherwise
   quantity: number;
   price: number;
   subtotal: number;
@@ -61,6 +89,8 @@ export interface ProductBuyer {
   customerEmail: string;
   quantity: number; // units of THIS product in that order
   temperature: Temperature | null;
+  size: string | null; // size of THIS line (hasSizes products)
+  answers: OrderAnswer[]; // answers on THIS line (hasFields products)
   subtotal: number; // ₱ paid for THIS product in that order
   paymentMethod: PaymentMethod;
   paymentStatus: PaymentStatus;
@@ -77,6 +107,7 @@ export interface BoothSettings {
   endDate: string; // ISO
   totalCost: number; // typed by the admin — feeds Net Profit & ROI
   gcashNumber: string;
+  gcashPayment: boolean; // false = GCash off: customers pay at the booth only
   specsNumber: string;
   contactEmail: string; // exported to the client site's contact card
   clientSiteUrl: string; // deployed customer web menu URL — QR on the Scanner view
@@ -90,6 +121,15 @@ export interface BoothInfo {
 export interface ProductStat {
   productId: string;
   name: string;
+  sold: number;
+  revenue: number;
+  /** Units + revenue per size (served orders only). Empty for products
+   *  with no sized lines — including the lone "No size" bucket case. */
+  sizes: SizeStat[];
+}
+
+export interface SizeStat {
+  name: string; // size name, or "No size" for pre-size lines
   sold: number;
   revenue: number;
 }

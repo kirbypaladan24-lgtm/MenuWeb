@@ -19,6 +19,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
 import { apiFetch } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import type { BoothInfo, BoothState } from "@/lib/types";
@@ -92,6 +93,7 @@ interface SettingsForm {
   startDate: string;
   endDate: string;
   gcashNumber: string;
+  gcashPayment: boolean;
   specsNumber: string;
   contactEmail: string;
   clientSiteUrl: string;
@@ -140,6 +142,7 @@ export default function SettingsView() {
         startDate: isoToLocalInput(data.settings.startDate),
         endDate: isoToLocalInput(data.settings.endDate),
         gcashNumber: data.settings.gcashNumber ?? "",
+        gcashPayment: data.settings.gcashPayment ?? true,
         specsNumber: data.settings.specsNumber ?? "",
         contactEmail: data.settings.contactEmail ?? "",
         clientSiteUrl: data.settings.clientSiteUrl ?? "",
@@ -147,7 +150,7 @@ export default function SettingsView() {
     }
   }, [data]);
 
-  function set<K extends keyof SettingsForm>(key: K, value: string) {
+  function set<K extends keyof SettingsForm>(key: K, value: SettingsForm[K]) {
     setForm((f) => (f ? { ...f, [key]: value } : f));
   }
 
@@ -172,6 +175,7 @@ export default function SettingsView() {
           startDate: localInputToIso(form.startDate),
           endDate: localInputToIso(form.endDate),
           gcashNumber: form.gcashNumber.trim(),
+          gcashPayment: form.gcashPayment,
           specsNumber: form.specsNumber.trim(),
           contactEmail: form.contactEmail.trim(),
           clientSiteUrl: form.clientSiteUrl.trim(),
@@ -301,6 +305,24 @@ export default function SettingsView() {
                 </Field>
               </div>
 
+              <div className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2.5">
+                <div className="min-w-0">
+                  <Label htmlFor="settings-gcash-enabled" className="font-semibold">
+                    GCash payments
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Off hides GCash everywhere — customers pay at the booth only.
+                  </p>
+                </div>
+                <Switch
+                  id="settings-gcash-enabled"
+                  checked={form.gcashPayment}
+                  onCheckedChange={(v) => set("gcashPayment", v)}
+                  disabled={!isAdmin || saving}
+                  aria-label="Accept GCash payments"
+                />
+              </div>
+
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field
                   label="GCash Number"
@@ -314,8 +336,7 @@ export default function SettingsView() {
                     placeholder="0917 123 4567"
                     disabled={!isAdmin || saving}
                   />
-                </Field>
-                <Field
+                </Field>                <Field
                   label="SPECS Number"
                   htmlFor="settings-specs"
                   hint="Campus payment channel shown at checkout."

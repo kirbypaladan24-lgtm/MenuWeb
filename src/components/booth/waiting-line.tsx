@@ -214,11 +214,19 @@ export default function WaitingLine({
 
                 <ul className="space-y-1">
                   {o.items.map((item, idx) => (
-                    <li key={`${o.orderId}-${item.productId}-${item.temperature ?? "x"}-${idx}`} className="text-sm text-foreground">
+                    <li key={`${o.orderId}-${item.productId}-${item.temperature ?? "x"}-${item.size ?? "x"}-${idx}`} className="text-sm text-foreground">
                       <span className="font-semibold">{item.quantity} ×</span>{" "}
                       {item.productName}
                       {item.temperature && (
                         <span className="text-muted-foreground"> — {item.temperature}</span>
+                      )}
+                      {item.size && (
+                        <span className="text-muted-foreground"> · {item.size}</span>
+                      )}
+                      {item.answers.length > 0 && (
+                        <span className="block text-xs text-muted-foreground">
+                          {item.answers.map((a) => `${a.label}: ${a.value}`).join(" · ")}
+                        </span>
                       )}
                     </li>
                   ))}

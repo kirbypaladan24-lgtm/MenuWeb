@@ -15,6 +15,8 @@ export interface QrOrderItem {
   q: number; // quantity
   n: string; // product name
   t: string | null; // HOT | COLD | null
+  z?: string | null; // size name (hasSizes products) — tolerated when missing
+  a?: { l: string; v: string }[]; // custom-field answers — tolerated when missing
   s: number; // subtotal (₱)
 }
 
@@ -90,6 +92,20 @@ export function parseOrderQr(text: string): ParsedOrderQr | null {
               q: it.q,
               n: it.n,
               t: typeof it.t === "string" ? it.t : null,
+              ...(typeof it.z === "string" && it.z !== "" ? { z: it.z } : {}),
+              ...(Array.isArray(it.a)
+                ? {
+                    a: it.a
+                      .filter(
+                        (e): e is { l: string; v: string } =>
+                          !!e &&
+                          typeof e === "object" &&
+                          typeof (e as { l: unknown }).l === "string" &&
+                          typeof (e as { v: unknown }).v === "string"
+                      )
+                      .map((e) => ({ l: e.l, v: e.v })),
+                  }
+                : {}),
               s: it.s,
             }))
         : [];

@@ -15,6 +15,8 @@ import {
   boothStateOf,
   getBoothRow,
   nextOrderId,
+  parseProductFields,
+  parseProductSizes,
   serializeBooth,
   serializeOrder,
   uniqueOrderId,
@@ -30,6 +32,8 @@ interface IncomingItem {
   q: number;
   n: string;
   t: string | null;
+  z: string | null; // size name (hasSizes products) — null when none chosen
+  a: { label: string; value: string }[]; // custom-field answers — [] when none
   s: number;
 }
 
@@ -38,6 +42,8 @@ interface PreparedItem {
   productId: string;
   productName: string;
   temperature: string | null;
+  size: string | null;
+  answers: { label: string; value: string }[];
   quantity: number;
   price: number;
   subtotal: number;
@@ -149,11 +155,39 @@ export async function registerOrderFromPayload(
       }
       temperature = obj.t;
     }
+    // z = size name (hasSizes products). Tolerated when missing (old QRs);
+    // the re-pricer below resolves it against the current size menu.
+    let size: string | null = null;
+    if (obj.z !== undefined && obj.z !== null) {
+      if (typeof obj.z !== "string") fail(400, "item z must be a string");
+      const trimmed = obj.z.trim().slice(0, 20);
+      size = trimmed === "" ? null : trimmed;
+    }
+    // a = custom-field answers [{l, v}]. Tolerated when missing (old QRs);
+    // resolved against the current field defs below. Values cap at 100
+    // chars so one QR can't bloat the database.
+    const incomingAnswers: { label: string; value: string }[] = [];
+    if (obj.a !== undefined && obj.a !== null) {
+      if (!Array.isArray(obj.a)) fail(400, "item a must be an array");
+      for (const entry of obj.a as unknown[]) {
+        if (!entry || typeof entry !== "object") fail(400, "item a entries must be objects");
+        const rec = entry as Record<string, unknown>;
+        if (typeof rec.l !== "string" || typeof rec.v !== "string") {
+          fail(400, "item a entries must look like {l, v}");
+        }
+        const label = rec.l.trim().slice(0, 30);
+        if (label === "") continue;
+        incomingAnswers.push({ label, value: rec.v.slice(0, 100) });
+      }
+      if (incomingAnswers.length > 8) fail(400, "an item can carry at most 8 answers");
+    }
     items.push({
       ...(typeof obj.pid === "string" && obj.pid !== "" ? { pid: obj.pid } : {}),
       q: obj.q,
       n: obj.n.trim().slice(0, 80),
       t: temperature,
+      z: size,
+      a: incomingAnswers,
       s: obj.s,
     });
   }
@@ -161,6 +195,9 @@ export async function registerOrderFromPayload(
   // pay ∈ GCASH | BOOTH
   if (body.pay !== "GCASH" && body.pay !== "BOOTH") {
     fail(400, "pay must be GCASH or BOOTH");
+  }
+  if (body.pay === "GCASH" && !settings.gcashPayment) {
+    fail(400, "GCash payments are currently disabled — please order again with Pay at Booth.", "GCASH_DISABLED");
   }
   const paymentMethod = body.pay;
 
@@ -205,6 +242,8 @@ export async function registerOrderFromPayload(
         productId: item.pid?.trim() || item.n,
         productName: item.n,
         temperature: item.t,
+        size: item.z,
+        answers: item.a,
         quantity: item.q,
         price: unit,
         subtotal: item.s,
@@ -213,11 +252,58 @@ export async function registerOrderFromPayload(
       continue;
     }
 
+    // Known product — resolve the size first (a size's own price wins),
+    // then the current base price. Warnings never block.
+    let size = item.z;
+    let unit = product.price;
+    if (product.hasSizes) {
+      const menu = parseProductSizes(product.sizes);
+      if (size) {
+        const match = menu.find((s) => s.name.toLowerCase() === size!.toLowerCase());
+        if (match) {
+          size = match.name; // canonicalize casing ("large" → "Large")
+          unit = match.price;
+        } else {
+          warnings.push(`Size “${size}” is not on the menu for ${product.name} — charged base ₱${product.price}.`);
+          size = null;
+        }
+      } else {
+        warnings.push(`${product.name} now has sizes — no size chosen, charged base ₱${product.price}.`);
+      }
+    } else if (size) {
+      warnings.push(`Size “${size}” ignored — ${product.name} has no size options.`);
+      size = null;
+    }
+
+    // Known product — resolve the custom-field answers. Missing REQUIRED
+    // answers warn (never block — the line keeps moving; creation screens
+    // enforce them up front). Labels canonicalize to the menu ("sugar" →
+    // "Sugar"); answers for a product with the flag off are dropped.
+    let answers: { label: string; value: string }[] = [];
+    if (product.hasFields) {
+      const defs = parseProductFields(product.fields);
+      const byLabel = new Map(defs.map((d) => [d.label.toLowerCase(), d.label]));
+      for (const ans of item.a) {
+        const canonical = byLabel.get(ans.label.toLowerCase());
+        answers.push({ label: canonical ?? ans.label, value: ans.value });
+      }
+      for (const def of defs) {
+        const filled = answers.some(
+          (a) => a.label.toLowerCase() === def.label.toLowerCase() && a.value.trim() !== ""
+        );
+        if (def.required && !filled) {
+          warnings.push(`“${def.label}” is required for ${product.name} — registered without an answer.`);
+        }
+      }
+    } else if (item.a.length > 0) {
+      warnings.push(`Extra answers ignored — ${product.name} has no custom fields.`);
+    }
+
     // Known product — current price always wins.
-    const subtotal = product.price * item.q;
+    const subtotal = unit * item.q;
     if (item.s !== subtotal) {
       warnings.push(
-        `Price updated: ${product.name} is now ₱${product.price} — subtotal ₱${subtotal} (QR had ₱${item.s}).`
+        `Price updated: ${product.name}${size ? ` (${size})` : ""} is now ₱${unit} — subtotal ₱${subtotal} (QR had ₱${item.s}).`
       );
     }
     if (!product.available) {
@@ -228,8 +314,10 @@ export async function registerOrderFromPayload(
       productId: product.id,
       productName: product.name,
       temperature: item.t,
+      size,
+      answers,
       quantity: item.q,
-      price: product.price,
+      price: unit,
       subtotal,
     });
     recomputedTotal += subtotal;
@@ -261,6 +349,8 @@ export async function registerOrderFromPayload(
           productId: p.productId,
           productName: p.productName,
           temperature: p.temperature,
+          size: p.size,
+          answers: JSON.stringify(p.answers),
           quantity: p.quantity,
           price: p.price,
           subtotal: p.subtotal,

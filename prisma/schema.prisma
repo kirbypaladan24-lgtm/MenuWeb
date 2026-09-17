@@ -19,6 +19,10 @@ model Product {
   available      Boolean     @default(true)
   hasTemperature Boolean     @default(false)
   defaultTemperature String? // "HOT" | "COLD" — fixed serving temp shown to customers when hasTemperature is false
+  hasSizes       Boolean     @default(false) // true = customers pick a size (each size has its own price)
+  sizes          String      @default("[]") // JSON: [{name, price}] — ignored unless hasSizes is true
+  hasFields      Boolean     @default(false) // true = customers fill custom inputs (e.g. "Dedication", "Sugar level")
+  fields         String      @default("[]") // JSON: [{label, required}] — ignored unless hasFields is true
   category       String      @default("Drinks")
   sold           Int         @default(0)
   createdAt      DateTime    @default(now())
@@ -48,6 +52,8 @@ model OrderItem {
   productId   String
   productName String
   temperature String? // HOT | COLD | null
+  size        String? // size name (e.g. "Large") | null — only for hasSizes products
+  answers     String  @default("[]") // JSON: [{label, value}] — customer answers to the product's custom fields
   quantity    Int      @default(1)
   price       Int
   subtotal    Int
@@ -60,6 +66,7 @@ model Booth {
   endDate     DateTime
   totalCost   Int      @default(0) // typed by the admin — money spent running the booth
   gcashNumber String   @default("")
+  gcashPayment Boolean @default(true) // false = GCash off: customers pay at the booth only
   specsNumber String   @default("")
   contactEmail String  @default("") // shown on the client site's contact card
   clientSiteUrl String @default("") // deployed customer web menu URL — shown as a QR on the Scanner view

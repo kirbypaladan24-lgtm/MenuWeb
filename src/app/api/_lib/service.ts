@@ -1,6 +1,7 @@
 // Coffee++ API — domain service layer (private to src/app/api/**)
 // Serializers map Prisma rows to the shared types in src/lib/types.ts.
 import { db } from "@/lib/db";
+import { fail } from "@/app/api/_lib/http";
 import type { Prisma, Product as ProductRow, Booth as BoothRow, OrderItem as ItemRow } from "@prisma/client";
 import type {
   BoothSettings,
@@ -9,14 +10,18 @@ import type {
   DailySalesStat,
   HotColdStat,
   Order,
+  OrderAnswer,
   OrderItem,
   OrderStatus,
   PaymentMethod,
   PaymentStatus,
   Product,
   ProductBuyer,
+  ProductField,
+  ProductSize,
   ProductStat,
   PublicProduct,
+  SizeStat,
   Temperature,
   TimeOfDayBucket,
   TimeOfDayStat,
@@ -35,6 +40,129 @@ function asTemperature(value: string | null): Temperature | null {
   return value === "HOT" || value === "COLD" ? value : null;
 }
 
+/* ------------------------------------------------------------------ */
+/* Product sizes (stored as a JSON string on the Product row)           */
+/* ------------------------------------------------------------------ */
+
+const MAX_SIZES = 6;
+const MAX_SIZE_NAME = 20;
+const MAX_FIELDS = 4;
+const MAX_FIELD_LABEL = 30;
+const MAX_ANSWER_CHARS = 100;
+
+/** Read the sizes JSON off a Product row — corrupt data reads as []. */
+export function parseProductSizes(raw: string | null | undefined): ProductSize[] {
+  if (!raw) return [];
+  try {
+    const arr: unknown = JSON.parse(raw);
+    if (!Array.isArray(arr)) return [];
+    const out: ProductSize[] = [];
+    for (const entry of arr) {
+      if (!entry || typeof entry !== "object") continue;
+      const rec = entry as Record<string, unknown>;
+      if (typeof rec.name !== "string" || rec.name.trim() === "") continue;
+      if (typeof rec.price !== "number" || !Number.isInteger(rec.price) || rec.price < 0) continue;
+      out.push({ name: rec.name.trim().slice(0, MAX_SIZE_NAME), price: rec.price });
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Validate a sizes list from a product create/update body. Throws HttpError
+ * on any problem. Returns the canonical list (trimmed names).
+ */
+export function validateSizeList(input: unknown): ProductSize[] {
+  if (!Array.isArray(input)) fail(400, "sizes must be an array of {name, price}");
+  const raw = input as unknown[];
+  if (raw.length > MAX_SIZES) fail(400, `sizes can have at most ${MAX_SIZES} entries`);
+  const seen = new Set<string>();
+  const out: ProductSize[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") fail(400, "sizes must be objects like {name, price}");
+    const rec = entry as Record<string, unknown>;
+    if (typeof rec.name !== "string" || rec.name.trim() === "") {
+      fail(400, "every size needs a non-empty name");
+    }
+    const name = rec.name.trim().slice(0, MAX_SIZE_NAME);
+    if (typeof rec.price !== "number" || !Number.isInteger(rec.price) || rec.price < 0) {
+      fail(400, `size "${name}" needs a non-negative integer price`);
+    }
+    if (seen.has(name.toLowerCase())) fail(400, `duplicate size name "${name}"`);
+    seen.add(name.toLowerCase());
+    out.push({ name, price: rec.price });
+  }
+  return out;
+}
+
+/** Read the custom-field defs off a Product row — corrupt data reads as []. */
+export function parseProductFields(raw: string | null | undefined): ProductField[] {
+  if (!raw) return [];
+  try {
+    const arr: unknown = JSON.parse(raw);
+    if (!Array.isArray(arr)) return [];
+    const out: ProductField[] = [];
+    for (const entry of arr) {
+      if (!entry || typeof entry !== "object") continue;
+      const rec = entry as Record<string, unknown>;
+      if (typeof rec.label !== "string" || rec.label.trim() === "") continue;
+      out.push({
+        label: rec.label.trim().slice(0, MAX_FIELD_LABEL),
+        required: rec.required === true,
+      });
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Validate custom-field defs from a product create/update body. Throws
+ * HttpError on any problem. Returns the canonical list.
+ */
+export function validateFieldList(input: unknown): ProductField[] {
+  if (!Array.isArray(input)) fail(400, "fields must be an array of {label, required}");
+  const raw = input as unknown[];
+  if (raw.length > MAX_FIELDS) fail(400, `fields can have at most ${MAX_FIELDS} entries`);
+  const seen = new Set<string>();
+  const out: ProductField[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") fail(400, "fields must be objects like {label, required}");
+    const rec = entry as Record<string, unknown>;
+    if (typeof rec.label !== "string" || rec.label.trim() === "") {
+      fail(400, "every field needs a non-empty label");
+    }
+    const label = rec.label.trim().slice(0, MAX_FIELD_LABEL);
+    if (seen.has(label.toLowerCase())) fail(400, `duplicate field label "${label}"`);
+    seen.add(label.toLowerCase());
+    out.push({ label, required: rec.required === true });
+  }
+  return out;
+}
+
+/** Read stored answers off an OrderItem row — corrupt data reads as []. */
+export function parseOrderAnswers(raw: string | null | undefined): OrderAnswer[] {
+  if (!raw) return [];
+  try {
+    const arr: unknown = JSON.parse(raw);
+    if (!Array.isArray(arr)) return [];
+    const out: OrderAnswer[] = [];
+    for (const entry of arr) {
+      if (!entry || typeof entry !== "object") continue;
+      const rec = entry as Record<string, unknown>;
+      if (typeof rec.label !== "string" || rec.label.trim() === "") continue;
+      if (typeof rec.value !== "string") continue;
+      out.push({ label: rec.label.trim().slice(0, MAX_FIELD_LABEL), value: rec.value.slice(0, MAX_ANSWER_CHARS) });
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
 export function serializeProduct(p: ProductRow): Product {
   return {
     id: p.id,
@@ -45,6 +173,10 @@ export function serializeProduct(p: ProductRow): Product {
     available: p.available,
     hasTemperature: p.hasTemperature,
     defaultTemperature: asTemperature(p.defaultTemperature),
+    hasSizes: p.hasSizes,
+    sizes: parseProductSizes(p.sizes),
+    hasFields: p.hasFields,
+    fields: parseProductFields(p.fields),
     category: p.category,
     sold: p.sold,
   };
@@ -52,7 +184,8 @@ export function serializeProduct(p: ProductRow): Product {
 
 /** Customer-safe product: sold count omitted. defaultTemperature is
  *  exported only when there is no Hot/Cold choice — that is the one case
- *  where the customer site needs to know the fixed serving temperature. */
+ *  where the customer site needs to know the fixed serving temperature.
+ *  sizes ride along only when hasSizes is true (the flag is the switch). */
 export function toPublicProduct(p: ProductRow): PublicProduct {
   return {
     id: p.id,
@@ -65,6 +198,10 @@ export function toPublicProduct(p: ProductRow): PublicProduct {
     defaultTemperature: p.hasTemperature
       ? null
       : asTemperature(p.defaultTemperature),
+    hasSizes: p.hasSizes,
+    sizes: p.hasSizes ? parseProductSizes(p.sizes) : [],
+    hasFields: p.hasFields,
+    fields: p.hasFields ? parseProductFields(p.fields) : [],
     category: p.category,
   };
 }
@@ -74,6 +211,8 @@ function serializeItem(i: ItemRow): OrderItem {
     productId: i.productId,
     productName: i.productName,
     temperature: asTemperature(i.temperature),
+    size: typeof i.size === "string" && i.size !== "" ? i.size : null,
+    answers: parseOrderAnswers(i.answers),
     quantity: i.quantity,
     price: i.price,
     subtotal: i.subtotal,
@@ -105,6 +244,7 @@ export function serializeBooth(b: BoothRow): BoothSettings {
     endDate: b.endDate.toISOString(),
     totalCost: b.totalCost,
     gcashNumber: b.gcashNumber,
+    gcashPayment: b.gcashPayment,
     specsNumber: b.specsNumber,
     contactEmail: b.contactEmail,
     clientSiteUrl: b.clientSiteUrl,
@@ -300,6 +440,8 @@ export async function listProductBuyers(productId: string): Promise<ProductBuyer
     customerEmail: r.order.customerEmail,
     quantity: r.quantity,
     temperature: asTemperature(r.temperature),
+    size: typeof r.size === "string" && r.size !== "" ? r.size : null,
+    answers: parseOrderAnswers(r.answers),
     subtotal: r.subtotal,
     paymentMethod: r.order.paymentMethod as PaymentMethod,
     paymentStatus: r.order.paymentStatus as PaymentStatus,
@@ -314,6 +456,61 @@ export async function listProductBuyers(productId: string): Promise<ProductBuyer
 /* ------------------------------------------------------------------ */
 /* Dashboard                                                           */
 /* ------------------------------------------------------------------ */
+
+interface ProductAgg {
+  productId: string;
+  name: string;
+  sold: number;
+  revenue: number;
+  hot: number;
+  cold: number;
+  bySize: Map<string, { sold: number; revenue: number }>;
+}
+
+/** One ProductStat row - zeros + full size menu when there are no sales. */
+function toProductStat(
+  productId: string,
+  name: string,
+  agg?: ProductAgg,
+  menuSizes: ProductSize[] = []
+): ProductStat {
+  const buckets = new Map<string, { sold: number; revenue: number }>();
+  for (const s of menuSizes) buckets.set(s.name, { sold: 0, revenue: 0 });
+  if (agg) {
+    for (const [key, v] of agg.bySize) {
+      const entry = buckets.get(key) ?? { sold: 0, revenue: 0 };
+      entry.sold += v.sold;
+      entry.revenue += v.revenue;
+      buckets.set(key, entry);
+    }
+  }
+  const menuNames = new Set(menuSizes.map((s) => s.name));
+  const sizes: SizeStat[] = [
+    // Defined sizes first, in menu order - zeros included so every size total stays visible.
+    ...menuSizes.map((s) => ({
+      name: s.name,
+      ...(buckets.get(s.name) ?? { sold: 0, revenue: 0 }),
+    })),
+    // Extras last: pre-size lines ('No size') and renamed sizes.
+    ...Array.from(buckets.entries())
+      .filter(([key]) => !menuNames.has(key))
+      .map(([sizeName, v]) => ({ name: sizeName, sold: v.sold, revenue: v.revenue }))
+      .sort((x, y) => y.sold - x.sold || x.name.localeCompare(y.name)),
+  ];
+  // No size menu + nothing but pre-size lines: drop the lone 'No size' bucket.
+  const meaningful =
+    menuSizes.length === 0 &&
+    (sizes.length === 0 || (sizes.length === 1 && sizes[0].name === 'No size'))
+      ? []
+      : sizes;
+  return {
+    productId,
+    name,
+    sold: agg?.sold ?? 0,
+    revenue: agg?.revenue ?? 0,
+    sizes: meaningful,
+  };
+}
 
 /**
  * Aggregate dashboard stats.
@@ -344,16 +541,7 @@ export async function computeDashboard(day: number | null): Promise<DashboardSta
   const ordersAborted = orders.filter((o) => o.orderStatus === "ABORTED").length;
   const ordersPending = orders.filter((o) => o.orderStatus === "PENDING").length;
 
-  interface Agg {
-    productId: string;
-    name: string;
-    sold: number;
-    revenue: number;
-    hot: number;
-    cold: number;
-  }
-
-  const aggById = new Map<string, Agg>();
+  const aggById = new Map<string, ProductAgg>();
   let itemsSold = 0;
 
   for (const order of served) {
@@ -367,11 +555,19 @@ export async function computeDashboard(day: number | null): Promise<DashboardSta
         revenue: 0,
         hot: 0,
         cold: 0,
+        bySize: new Map(),
       };
       agg.sold += item.quantity;
       agg.revenue += item.subtotal;
       if (item.temperature === "HOT") agg.hot += item.quantity;
       else if (item.temperature === "COLD") agg.cold += item.quantity;
+      // Size comparison bucket — pre-size lines land in "No size" so the
+      // breakdown always reconciles with the product totals.
+      const sizeKey = item.size && item.size !== "" ? item.size : "No size";
+      const sizeEntry = agg.bySize.get(sizeKey) ?? { sold: 0, revenue: 0 };
+      sizeEntry.sold += item.quantity;
+      sizeEntry.revenue += item.subtotal;
+      agg.bySize.set(sizeKey, sizeEntry);
       aggById.set(item.productId, agg);
     }
   }
@@ -380,17 +576,26 @@ export async function computeDashboard(day: number | null): Promise<DashboardSta
   const netProfit = revenue - totalCost;
   const roi = totalCost > 0 ? Math.round((netProfit / totalCost) * 10000) / 100 : 0;
 
-  const productStats: ProductStat[] = Array.from(aggById.values())
-    .filter((a) => a.sold > 0)
-    .sort((a, b) => b.sold - a.sold || a.name.localeCompare(b.name))
-    .map((a) => ({
-      productId: a.productId,
-      name: a.name,
-      sold: a.sold,
-      revenue: a.revenue,
-    }));
+  const productStats: ProductStat[] = [
+    // Every catalog product, even with zero sales — the dashboard lists
+    // the full menu with 0s instead of an empty table before opening.
+    ...products.map((p) =>
+      toProductStat(
+        p.id,
+        p.name,
+        aggById.get(p.id),
+        p.hasSizes ? parseProductSizes(p.sizes) : []
+      )
+    ),
+    // Lines for products off the menu (unknown / since deleted) — real
+    // sales that belong nowhere else.
+    ...Array.from(aggById.values())
+      .filter((a) => a.sold > 0 && !products.some((p) => p.id === a.productId))
+      .map((a) => toProductStat(a.productId, a.name, a)),
+  ].sort((x, y) => y.sold - x.sold || x.name.localeCompare(y.name));
   const top = productStats[0];
-  const bestSeller: DashboardStats["bestSeller"] = top ? { name: top.name, sold: top.sold } : null;
+  const bestSeller: DashboardStats["bestSeller"] =
+    top && top.sold > 0 ? { name: top.name, sold: top.sold } : null;
 
   const hotCold: HotColdStat[] = products
     .filter((p) => p.hasTemperature)

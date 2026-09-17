@@ -60,15 +60,34 @@ export async function GET(req: Request) {
 
     /* Sheet 2 — Order Items (all orders, snapshot data) */
     const itemsSheet: (string | number)[][] = [
-      ["Order ID", "Product ID", "Product", "Temperature", "Quantity", "Price", "Subtotal"],
+      ["Order ID", "Product ID", "Product", "Temperature", "Size", "Answers", "Quantity", "Price", "Subtotal"],
     ];
     for (const o of orders) {
       for (const item of o.items) {
+        let answers = "";
+        try {
+          const arr: unknown = JSON.parse(item.answers ?? "[]");
+          if (Array.isArray(arr)) {
+            answers = arr
+              .filter(
+                (e): e is { label: string; value: string } =>
+                  !!e && typeof e === "object" &&
+                  typeof (e as { label: unknown }).label === "string" &&
+                  typeof (e as { value: unknown }).value === "string"
+              )
+              .map((e) => `${e.label}: ${e.value}`)
+              .join("; ");
+          }
+        } catch {
+          // Corrupt answers JSON — leave the cell blank.
+        }
         itemsSheet.push([
           o.orderId,
           item.productId,
           item.productName,
           item.temperature ?? "",
+          item.size ?? "",
+          answers,
           item.quantity,
           item.price,
           item.subtotal,
@@ -76,33 +95,18 @@ export async function GET(req: Request) {
       }
     }
 
-    /* Sheet 3 — Product Summary (SERVED only, sold > 0) */
-    interface Summary {
-      name: string;
-      sold: number;
-      revenue: number;
-    }
-    const summaryById = new Map<string, Summary>();
-    for (const o of orders) {
-      if (o.orderStatus !== "SERVED") continue;
-      for (const item of o.items) {
-        const entry =
-          summaryById.get(item.productId) ??
-          { name: item.productName, sold: 0, revenue: 0 };
-        entry.sold += item.quantity;
-        entry.revenue += item.subtotal;
-        summaryById.set(item.productId, entry);
-      }
-    }
+        /* Sheet 3 - Product Summary (SERVED only, sold > 0) with size sub-rows.
+       Reuses computeDashboard's productStats - one aggregation, not two. */
     const productSheet: (string | number)[][] = [
       ["Product", "Quantity Sold", "Revenue"],
     ];
-    for (const entry of Array.from(summaryById.values())
-      .filter((s) => s.sold > 0)
-      .sort((a, b) => b.sold - a.sold || a.name.localeCompare(b.name))) {
-      productSheet.push([entry.name, entry.sold, entry.revenue]);
+    for (const p of stats.productStats) {
+      if (p.sold === 0) continue;
+      productSheet.push([p.name, p.sold, p.revenue]);
+      for (const s of p.sizes) {
+        productSheet.push([`└ ${s.name}`, s.sold, s.revenue]);
+      }
     }
-
     /* Sheet 4 — Dashboard */
     const bestSellerText = stats.bestSeller
       ? `${stats.bestSeller.name} (${stats.bestSeller.sold} sold)`

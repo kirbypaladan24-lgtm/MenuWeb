@@ -77,6 +77,7 @@ import {
   shortOrderId,
 } from "@/lib/format";
 import type {
+  BoothInfo,
   HotspotScanEvent,
   Order,
   OrderStatus,
@@ -125,6 +126,8 @@ function ManualOrderDialog({ open, onOpenChange, onRegister }: ManualOrderDialog
   const [alias, setAlias] = React.useState("");
   const [email, setEmail] = React.useState("");
   const [pay, setPay] = React.useState<PaymentMethod>("GCASH");
+  const [sizeName, setSizeName] = React.useState("");
+  const [answers, setAnswers] = React.useState<Record<string, string>>({});
   const [nameError, setNameError] = React.useState<string | null>(null);
   const [emailError, setEmailError] = React.useState<string | null>(null);
 
@@ -132,11 +135,30 @@ function ManualOrderDialog({ open, onOpenChange, onRegister }: ManualOrderDialog
     queryKey: ["booth", "products"],
     queryFn: () => apiFetch<unknown>("/api/products"),
   });
+  const { data: boothData } = useQuery({
+    queryKey: ["booth", "info"],
+    queryFn: () => apiFetch<BoothInfo>("/api/booth"),
+  });
+  // GCash toggle from Settings — missing (old DBs) means enabled.
+  const gcashOn =
+    (boothData as BoothInfo | undefined)?.settings.gcashPayment !== false;
   const products = React.useMemo(() => asList<Product>(data, "products"), [data]);
   const selected = products.find((p) => p.id === productId) ?? null;
   const hasTemp = selected?.hasTemperature ?? false;
   const tempCount = hotQty + coldQty;
   const unitCount = hasTemp ? tempCount : qty;
+  // Size menu — honored only while the product's flag is on.
+  const sizesOn = (selected?.hasSizes ?? false) && (selected?.sizes.length ?? 0) > 0;
+  const unitPrice = sizesOn
+    ? (selected?.sizes.find((s) => s.name === sizeName)?.price ?? 0)
+    : (selected?.price ?? 0);
+  // Custom inputs — honored only while the product's flag is on.
+  const fieldsOn = (selected?.hasFields ?? false) && (selected?.fields.length ?? 0) > 0;
+  const fieldsMissing = fieldsOn
+    ? (selected?.fields.some(
+        (f) => f.required && (answers[f.label] ?? "").trim() === ""
+      ) ?? false)
+    : false;
 
   // Reset the form every time the dialog is (re)opened.
   React.useEffect(() => {
@@ -149,16 +171,25 @@ function ManualOrderDialog({ open, onOpenChange, onRegister }: ManualOrderDialog
       setAlias("");
       setEmail("");
       setPay("GCASH");
+      setSizeName("");
+      setAnswers({});
       setNameError(null);
       setEmailError(null);
     }
   }, [open]);
+
+  // GCash switched off mid-shift (or loaded as off after open) — force BOOTH.
+  React.useEffect(() => {
+    if (!gcashOn) setPay("BOOTH");
+  }, [gcashOn]);
 
   function selectProduct(id: string) {
     setProductId(id);
     setHotQty(0); // predictable reset per product
     setColdQty(0);
     setQty(1);
+    setSizeName("");
+    setAnswers({});
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -182,18 +213,29 @@ function ManualOrderDialog({ open, onOpenChange, onRegister }: ManualOrderDialog
     }
     if (!selected || !valid) return;
     if (selected.hasTemperature && tempCount < 1) return; // guarded below
+    if (sizesOn && !sizeName) return; // size is required — guarded below
+    if (fieldsMissing) return; // required answers missing — guarded below
 
     // No id — the server assigns the next sequential ORD-####.
     // Temperature products → one line per temperature with its own count
     // (2 HOT + 1 COLD = two items — the same shape the customer site
-    // produces, so every system interprets it identically).
+    // produces, so every system interprets it identically). Every line
+    // carries the chosen size (z) priced at the size's own price, plus the
+    // custom-field answers (a).
+    const sizeTag = sizesOn ? sizeName : null;
+    const answerTag =
+      fieldsOn && selected.fields.length > 0
+        ? selected.fields
+            .map((f) => ({ l: f.label, v: (answers[f.label] ?? "").slice(0, 100) }))
+            .filter((a) => a.v.trim() !== "")
+        : [];
     const items: QrOrderPayload["items"] = selected.hasTemperature
       ? [
           ...(hotQty > 0
-            ? [{ pid: selected.id, q: hotQty, n: selected.name, t: "HOT", s: selected.price * hotQty }]
+            ? [{ pid: selected.id, q: hotQty, n: selected.name, t: "HOT", ...(sizeTag ? { z: sizeTag } : {}), ...(answerTag.length > 0 ? { a: answerTag } : {}), s: unitPrice * hotQty }]
             : []),
           ...(coldQty > 0
-            ? [{ pid: selected.id, q: coldQty, n: selected.name, t: "COLD", s: selected.price * coldQty }]
+            ? [{ pid: selected.id, q: coldQty, n: selected.name, t: "COLD", ...(sizeTag ? { z: sizeTag } : {}), ...(answerTag.length > 0 ? { a: answerTag } : {}), s: unitPrice * coldQty }]
             : []),
         ]
       : [
@@ -202,10 +244,12 @@ function ManualOrderDialog({ open, onOpenChange, onRegister }: ManualOrderDialog
             q: qty,
             n: selected.name,
             t: selected.defaultTemperature ?? null,
-            s: selected.price * qty,
+            ...(sizeTag ? { z: sizeTag } : {}),
+            ...(answerTag.length > 0 ? { a: answerTag } : {}),
+            s: unitPrice * qty,
           },
         ];
-    const subtotal = selected.price * (selected.hasTemperature ? tempCount : qty);
+    const subtotal = unitPrice * (selected.hasTemperature ? tempCount : qty);
     const payload: QrOrderPayload = {
       v: 1,
       name: trimmedName,
@@ -213,7 +257,7 @@ function ManualOrderDialog({ open, onOpenChange, onRegister }: ManualOrderDialog
       email: trimmedEmail,
       items,
       total: subtotal,
-      pay,
+      pay: gcashOn ? pay : "BOOTH",
     };
     onOpenChange(false);
     onRegister(payload);
@@ -255,6 +299,86 @@ function ManualOrderDialog({ open, onOpenChange, onRegister }: ManualOrderDialog
               </p>
             )}
           </div>
+
+          {/* Size — one pick per product, priced at the size's own price. */}
+          {sizesOn && (
+            <div className="grid gap-2">
+              <span className="text-sm font-medium leading-none text-foreground">
+                Size
+              </span>
+              <RadioGroup
+                value={sizeName}
+                onValueChange={setSizeName}
+                className="grid grid-cols-2 gap-2"
+              >
+                {selected!.sizes.map((s) => (
+                  <div
+                    key={s.name}
+                    className="flex h-12 items-center gap-2 rounded-md border px-3 has-[button[data-state=checked]]:border-primary has-[button[data-state=checked]]:bg-primary/10"
+                  >
+                    <RadioGroupItem
+                      value={s.name}
+                      id={`manual-size-${s.name}`}
+                      aria-label={`Size ${s.name}, ${formatPeso(s.price)}`}
+                    />
+                    <Label
+                      htmlFor={`manual-size-${s.name}`}
+                      className="cursor-pointer font-medium"
+                    >
+                      {s.name}
+                      <span className="ml-1.5 text-xs font-semibold text-muted-foreground">
+                        {formatPeso(s.price)}
+                      </span>
+                    </Label>
+                  </div>
+                ))}
+              </RadioGroup>
+              {!sizeName && (
+                <p className="text-xs font-medium text-destructive" role="alert">
+                  Pick a size first.
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Custom inputs — answers ride inside the QR with the order. */}
+          {fieldsOn && (
+            <div className="grid gap-2">
+              <span className="text-sm font-medium leading-none text-foreground">
+                Extra details
+              </span>
+              {selected!.fields.map((f) => (
+                <div key={f.label} className="grid gap-1.5">
+                  <Label htmlFor={`manual-field-${f.label}`}>
+                    {f.label}{" "}
+                    {f.required ? (
+                      <span className="text-destructive">*</span>
+                    ) : (
+                      <span className="font-normal text-muted-foreground">
+                        (optional)
+                      </span>
+                    )}
+                  </Label>
+                  <Input
+                    id={`manual-field-${f.label}`}
+                    value={answers[f.label] ?? ""}
+                    onChange={(e) =>
+                      setAnswers((a) => ({ ...a, [f.label]: e.target.value }))
+                    }
+                    maxLength={100}
+                    placeholder={f.label}
+                    className="h-11"
+                    autoComplete="off"
+                  />
+                </div>
+              ))}
+              {fieldsMissing && (
+                <p className="text-xs font-medium text-destructive" role="alert">
+                  Fill the required inputs first.
+                </p>
+              )}
+            </div>
+          )}
 
           {/* Hot & Cold counts — a separate stepper per temperature.          */}
           {/* One walk-in order can mix: 2 hot + 1 cold = two line items.      */}
@@ -304,9 +428,9 @@ function ManualOrderDialog({ open, onOpenChange, onRegister }: ManualOrderDialog
                     </Button>
                     <span
                       className="w-16 text-right text-xs font-semibold tabular-nums text-muted-foreground"
-                      aria-label={`Hot subtotal ${formatPeso(selected.price * hotQty)}`}
+                      aria-label={`Hot subtotal ${formatPeso(unitPrice * hotQty)}`}
                     >
-                      {hotQty > 0 ? formatPeso(selected.price * hotQty) : "—"}
+                      {hotQty > 0 ? formatPeso(unitPrice * hotQty) : "—"}
                     </span>
                   </div>
                 </div>
@@ -343,9 +467,9 @@ function ManualOrderDialog({ open, onOpenChange, onRegister }: ManualOrderDialog
                     </Button>
                     <span
                       className="w-16 text-right text-xs font-semibold tabular-nums text-muted-foreground"
-                      aria-label={`Cold subtotal ${formatPeso(selected.price * coldQty)}`}
+                      aria-label={`Cold subtotal ${formatPeso(unitPrice * coldQty)}`}
                     >
-                      {coldQty > 0 ? formatPeso(selected.price * coldQty) : "—"}
+                      {coldQty > 0 ? formatPeso(unitPrice * coldQty) : "—"}
                     </span>
                   </div>
                 </div>
@@ -481,14 +605,16 @@ function ManualOrderDialog({ open, onOpenChange, onRegister }: ManualOrderDialog
             <RadioGroup
               value={pay}
               onValueChange={(v) => setPay(v === "BOOTH" ? "BOOTH" : "GCASH")}
-              className="grid grid-cols-2 gap-2"
+              className={gcashOn ? "grid grid-cols-2 gap-2" : "grid gap-2"}
             >
-              <div className="flex h-12 items-center gap-2 rounded-lg border px-3 has-[button[data-state=checked]]:border-primary has-[button[data-state=checked]]:bg-primary/10">
-                <RadioGroupItem value="GCASH" id="manual-pay-gcash" aria-label="Pay with GCash" />
-                <Label htmlFor="manual-pay-gcash" className="cursor-pointer font-medium">
-                  GCash
-                </Label>
-              </div>
+              {gcashOn && (
+                <div className="flex h-12 items-center gap-2 rounded-lg border px-3 has-[button[data-state=checked]]:border-primary has-[button[data-state=checked]]:bg-primary/10">
+                  <RadioGroupItem value="GCASH" id="manual-pay-gcash" aria-label="Pay with GCash" />
+                  <Label htmlFor="manual-pay-gcash" className="cursor-pointer font-medium">
+                    GCash
+                  </Label>
+                </div>
+              )}
               <div className="flex h-12 items-center gap-2 rounded-lg border px-3 has-[button[data-state=checked]]:border-primary has-[button[data-state=checked]]:bg-primary/10">
                 <RadioGroupItem value="BOOTH" id="manual-pay-booth" aria-label="Pay at the booth" />
                 <Label htmlFor="manual-pay-booth" className="cursor-pointer font-medium">
@@ -503,12 +629,12 @@ function ManualOrderDialog({ open, onOpenChange, onRegister }: ManualOrderDialog
             <span className="text-sm font-medium text-secondary-foreground">
               {selected
                 ? hasTemp
-                  ? `Total — ${hotQty} hot + ${coldQty} cold`
-                  : `Total — ${qty} × ${formatPeso(selected.price)}`
+                  ? `Total — ${hotQty} hot + ${coldQty} cold${sizesOn && sizeName ? ` · ${sizeName}` : ""}`
+                  : `Total — ${qty} × ${formatPeso(unitPrice)}${sizesOn && sizeName ? ` (${sizeName})` : ""}`
                 : "Total"}
             </span>
             <span className="text-lg font-bold text-secondary-foreground">
-              {selected ? formatPeso(selected.price * unitCount) : "—"}
+              {selected ? formatPeso(unitPrice * unitCount) : "—"}
             </span>
           </div>
 
@@ -521,7 +647,7 @@ function ManualOrderDialog({ open, onOpenChange, onRegister }: ManualOrderDialog
             <Button
               type="submit"
               className="h-11 flex-1 font-semibold"
-              disabled={!selected || (hasTemp && tempCount < 1)}
+              disabled={!selected || (hasTemp && tempCount < 1) || (sizesOn && !sizeName) || fieldsMissing}
             >
               <ClipboardList aria-hidden />
               Create Order
@@ -1126,13 +1252,21 @@ export default function Scanner() {
             <ul className="space-y-1.5">
               {order.items.map((item, i) => (
                 <li
-                  key={`${item.productId}-${item.temperature ?? "x"}-${i}`}
+                  key={`${item.productId}-${item.temperature ?? "x"}-${item.size ?? "x"}-${i}`}
                   className="flex items-baseline justify-between gap-2 text-sm"
                 >
                   <span className="font-medium text-foreground">
                     {item.quantity} × {item.productName}
                     {item.temperature && (
                       <span className="text-muted-foreground"> — {item.temperature}</span>
+                    )}
+                    {item.size && (
+                      <span className="text-muted-foreground"> · {item.size}</span>
+                    )}
+                    {item.answers.length > 0 && (
+                      <span className="block text-xs font-normal text-muted-foreground">
+                        {item.answers.map((a) => `${a.label}: ${a.value}`).join(" · ")}
+                      </span>
                     )}
                   </span>
                   <span className="text-muted-foreground">

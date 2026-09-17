@@ -76,10 +76,11 @@ const STATUS_TABS: { value: StatusFilter; label: string }[] = [
 
 function itemsSummary(order: Order): string {
   return order.items
-    .map(
-      (i) =>
-        `${i.quantity}× ${i.productName}${i.temperature ? ` ${i.temperature}` : ""}`
-    )
+    .map((i) => {
+      const bits = `${i.quantity}× ${i.productName}${i.temperature ? ` ${i.temperature}` : ""}${i.size ? ` ${i.size}` : ""}`;
+      const answers = i.answers.map((a) => `${a.label}: ${a.value}`).join(", ");
+      return answers ? `${bits} (${answers})` : bits;
+    })
     .join(", ");
 }
 

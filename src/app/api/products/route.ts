@@ -6,7 +6,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireRole } from "@/lib/auth";
 import { asBool, asInt, errorResponse, fail, readJson, unauthorized } from "@/app/api/_lib/http";
-import { serializeProduct, toPublicProduct } from "@/app/api/_lib/service";
+import { serializeProduct, toPublicProduct, validateFieldList, validateSizeList } from "@/app/api/_lib/service";
 
 export const dynamic = "force-dynamic";
 
@@ -92,6 +92,42 @@ export async function POST(req: Request) {
     // A choosable temperature makes the fixed default meaningless — keep data clean.
     if (hasTemperature) defaultTemperature = null;
 
+    // hasSizes (optional, default false) + sizes (the size menu — required
+    // non-empty when hasSizes is true, ignored otherwise).
+    let hasSizes = false;
+    if ("hasSizes" in body && body.hasSizes !== null && body.hasSizes !== undefined) {
+      const b = asBool(body.hasSizes);
+      if (b === null) fail(400, "hasSizes must be a boolean");
+      hasSizes = b;
+    }
+    let sizes = "[]";
+    if (hasSizes) {
+      if (!("sizes" in body) || body.sizes === null || body.sizes === undefined) {
+        fail(400, "sizes is required when hasSizes is true");
+      }
+      const list = validateSizeList(body.sizes);
+      if (list.length === 0) fail(400, "sizes needs at least 1 entry when hasSizes is true");
+      sizes = JSON.stringify(list);
+    }
+
+    // hasFields (optional, default false) + fields (the custom inputs —
+    // required non-empty when hasFields is true, ignored otherwise).
+    let hasFields = false;
+    if ("hasFields" in body && body.hasFields !== null && body.hasFields !== undefined) {
+      const b = asBool(body.hasFields);
+      if (b === null) fail(400, "hasFields must be a boolean");
+      hasFields = b;
+    }
+    let fields = "[]";
+    if (hasFields) {
+      if (!("fields" in body) || body.fields === null || body.fields === undefined) {
+        fail(400, "fields is required when hasFields is true");
+      }
+      const list = validateFieldList(body.fields);
+      if (list.length === 0) fail(400, "fields needs at least 1 entry when hasFields is true");
+      fields = JSON.stringify(list);
+    }
+
     // category (optional, default "Drinks")
     let category = "Drinks";
     if ("category" in body && body.category !== null && body.category !== undefined) {
@@ -107,7 +143,7 @@ export async function POST(req: Request) {
     }
 
     const created = await db.product.create({
-      data: { id, name, description, price, image, available, hasTemperature, defaultTemperature, category },
+      data: { id, name, description, price, image, available, hasTemperature, defaultTemperature, hasSizes, sizes, hasFields, fields, category },
     });
 
     return NextResponse.json({ product: serializeProduct(created) }, { status: 201 });

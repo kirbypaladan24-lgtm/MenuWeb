@@ -659,6 +659,53 @@ export default function Dashboard() {
       {/* Time-of-day demand — always visible, even before any served sale */}
       <TimeOfDayCard stats={data} />
 
+      {/* Product performance — always listed, even with zero sales:
+          size sub-rows compare each size's units + revenue under its
+          product (served orders only). */}
+      <Card className="gap-4">
+        <CardHeader>
+          <CardTitle>Product Performance</CardTitle>
+          <CardDescription>
+            Units sold and revenue per product (served orders only).
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="px-0 sm:px-6">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="pl-4 sm:pl-0">Product</TableHead>
+                <TableHead>Sold</TableHead>
+                <TableHead className="pr-4 sm:pr-0">Revenue</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {(data.productStats ?? []).map((p) => (
+                <React.Fragment key={p.productId}>
+                  <TableRow>
+                    <TableCell className="pl-4 font-medium sm:pl-0">{p.name}</TableCell>
+                    <TableCell>{p.sold}</TableCell>
+                    <TableCell className="pr-4 font-semibold sm:pr-0">
+                      {formatPeso(p.revenue)}
+                    </TableCell>
+                  </TableRow>
+                  {(p.sizes ?? []).map((s) => (
+                    <TableRow key={`${p.productId}-${s.name}`} className="bg-muted/40">
+                      <TableCell className="pl-8 text-muted-foreground sm:pl-4">
+                        └ {s.name}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">{s.sold}</TableCell>
+                      <TableCell className="pr-4 text-muted-foreground sm:pr-0">
+                        {formatPeso(s.revenue)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </React.Fragment>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
       {!hasSales ? (
         <EmptyState
           title="No sales yet"
@@ -672,38 +719,6 @@ export default function Dashboard() {
         />
       ) : (
         <>
-          {/* Product performance */}
-          <Card className="gap-4">
-            <CardHeader>
-              <CardTitle>Product Performance</CardTitle>
-              <CardDescription>
-                Units sold and revenue per product (served orders only).
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="px-0 sm:px-6">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="pl-4 sm:pl-0">Product</TableHead>
-                    <TableHead>Sold</TableHead>
-                    <TableHead className="pr-4 sm:pr-0">Revenue</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {(data.productStats ?? []).map((p) => (
-                    <TableRow key={p.productId}>
-                      <TableCell className="pl-4 font-medium sm:pl-0">{p.name}</TableCell>
-                      <TableCell>{p.sold}</TableCell>
-                      <TableCell className="pr-4 font-semibold sm:pr-0">
-                        {formatPeso(p.revenue)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-
           {/* Charts row */}
           <div className="grid gap-4 lg:grid-cols-2">
             <Card className="gap-4">

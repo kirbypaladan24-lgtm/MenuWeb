@@ -21,15 +21,16 @@ export async function GET(req: Request) {
     const products = await db.product.findMany({ orderBy: { id: "asc" } });
 
     const menu = {
-      // Schema v2: products may carry defaultTemperature (fixed serving temp
-      // when hasTemperature is false). Kept in sync with the client's
-      // src/data/menu.json version.
-      version: 2,
+      // Schema v5: booth may carry gcashPayment (false = GCash off);
+      // products may carry hasSizes + sizes and hasFields + fields.
+      // Kept in sync with the client's src/data/menu.json version.
+      version: 5,
       booth: {
         boothName: settings.boothName,
         startDate: settings.startDate,
         endDate: settings.endDate,
         gcashNumber: settings.gcashNumber,
+        gcashPayment: settings.gcashPayment,
         specsNumber: settings.specsNumber,
         contactEmail: settings.contactEmail,
       },

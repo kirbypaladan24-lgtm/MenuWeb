@@ -51,6 +51,16 @@ import type { Product } from "@/lib/types";
 import { BOOTH_QK, asList, useApiError } from "./booth-utils";
 import { ViewHeader } from "./view-header";
 
+interface SizeFormRow {
+  name: string;
+  price: string;
+}
+
+interface FieldFormRow {
+  label: string;
+  required: boolean;
+}
+
 interface ProductFormState {
   id: string;
   name: string;
@@ -60,6 +70,10 @@ interface ProductFormState {
   image: string;
   hasTemperature: boolean;
   defaultTemperature: "" | "HOT" | "COLD"; // "" = no fixed serving temp
+  hasSizes: boolean;
+  sizes: SizeFormRow[];
+  hasFields: boolean;
+  fields: FieldFormRow[];
 }
 
 const EMPTY_FORM: ProductFormState = {
@@ -71,6 +85,10 @@ const EMPTY_FORM: ProductFormState = {
   image: "",
   hasTemperature: false,
   defaultTemperature: "",
+  hasSizes: false,
+  sizes: [],
+  hasFields: false,
+  fields: [],
 };
 
 function toForm(p: Product): ProductFormState {
@@ -86,6 +104,10 @@ function toForm(p: Product): ProductFormState {
       !p.hasTemperature && (p.defaultTemperature === "HOT" || p.defaultTemperature === "COLD")
         ? p.defaultTemperature
         : "",
+    hasSizes: p.hasSizes,
+    sizes: (p.sizes ?? []).map((s) => ({ name: s.name, price: String(s.price) })),
+    hasFields: p.hasFields,
+    fields: (p.fields ?? []).map((f) => ({ label: f.label, required: f.required })),
   };
 }
 
@@ -150,6 +172,84 @@ function ProductFormDialog({
       });
       return;
     }
+    // Size menu — only when the flag is on; validated here so the server
+    // never has to guess (it re-validates anyway).
+    let sizes: { name: string; price: number }[] = [];
+    if (form.hasSizes) {
+      const seen = new Set<string>();
+      for (const row of form.sizes) {
+        const name = row.name.trim().slice(0, 20);
+        const sizePrice = Number(row.price);
+        if (!name) {
+          toast({
+            title: "Check the form",
+            description: "Every size needs a name.",
+            variant: "destructive",
+          });
+          return;
+        }
+        if (!(sizePrice >= 0) || !Number.isInteger(sizePrice)) {
+          toast({
+            title: "Check the form",
+            description: `Size "${name}" needs a whole-peso price (0 or more).`,
+            variant: "destructive",
+          });
+          return;
+        }
+        if (seen.has(name.toLowerCase())) {
+          toast({
+            title: "Check the form",
+            description: `Duplicate size name "${name}".`,
+            variant: "destructive",
+          });
+          return;
+        }
+        seen.add(name.toLowerCase());
+        sizes.push({ name, price: sizePrice });
+      }
+      if (sizes.length === 0) {
+        toast({
+          title: "Check the form",
+          description: "Add at least 1 size — or switch sizes off.",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+    // Custom inputs — same deal: validated here, re-validated server-side.
+    let fields: { label: string; required: boolean }[] = [];
+    if (form.hasFields) {
+      const seenLabels = new Set<string>();
+      for (const row of form.fields) {
+        const label = row.label.trim().slice(0, 30);
+        if (!label) {
+          toast({
+            title: "Check the form",
+            description: "Every input needs a label (what to ask).",
+            variant: "destructive",
+          });
+          return;
+        }
+        if (seenLabels.has(label.toLowerCase())) {
+          toast({
+            title: "Check the form",
+            description: `Duplicate input label "${label}".`,
+            variant: "destructive",
+          });
+          return;
+        }
+        seenLabels.add(label.toLowerCase());
+        fields.push({ label, required: row.required });
+      }
+      if (fields.length === 0) {
+        toast({
+          title: "Check the form",
+          description: "Add at least 1 input — or switch custom inputs off.",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
 
     setSubmitting(true);
     try {
@@ -164,6 +264,10 @@ function ProductFormDialog({
             category,
             hasTemperature: form.hasTemperature,
             defaultTemperature,
+            hasSizes: form.hasSizes,
+            sizes,
+            hasFields: form.hasFields,
+            fields,
           },
         });
       } else {
@@ -178,6 +282,10 @@ function ProductFormDialog({
             category,
             hasTemperature: form.hasTemperature,
             defaultTemperature,
+            hasSizes: form.hasSizes,
+            sizes,
+            hasFields: form.hasFields,
+            fields,
             available: true,
           },
         });
@@ -317,6 +425,202 @@ function ProductFormDialog({
               disabled={submitting}
             />
           </div>
+
+          <div className="flex items-center justify-between rounded-md border px-3 py-2.5">
+            <div>
+              <Label htmlFor="product-sizes" className="cursor-pointer">
+                Size choices
+              </Label>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Let customers pick a size — each size has its own price.
+              </p>
+            </div>
+            <Switch
+              id="product-sizes"
+              checked={form.hasSizes}
+              onCheckedChange={(v) =>
+                set("hasSizes", v)
+              }
+              disabled={submitting}
+            />
+          </div>
+
+          {/* Size menu — only used while the flag above is on. */}
+          {form.hasSizes && (
+            <div className="grid gap-2 rounded-md border p-3">
+              <Label>Sizes &amp; prices</Label>
+              {form.sizes.map((row, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <Input
+                    value={row.name}
+                    onChange={(e) =>
+                      set(
+                        "sizes",
+                        form.sizes.map((r, j) =>
+                          j === i ? { ...r, name: e.target.value } : r
+                        )
+                      )
+                    }
+                    placeholder="Large"
+                    maxLength={20}
+                    disabled={submitting}
+                    aria-label={`Size ${i + 1} name`}
+                  />
+                  <Input
+                    value={row.price}
+                    onChange={(e) =>
+                      set(
+                        "sizes",
+                        form.sizes.map((r, j) =>
+                          j === i ? { ...r, price: e.target.value } : r
+                        )
+                      )
+                    }
+                    placeholder="₱"
+                    type="number"
+                    min={0}
+                    inputMode="numeric"
+                    className="w-24 shrink-0"
+                    disabled={submitting}
+                    aria-label={`Size ${i + 1} price in pesos`}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    className="h-10 w-10 shrink-0"
+                    onClick={() =>
+                      set(
+                        "sizes",
+                        form.sizes.filter((_, j) => j !== i)
+                      )
+                    }
+                    disabled={submitting}
+                    aria-label={`Remove size ${row.name || i + 1}`}
+                  >
+                    <Trash2 className="h-4 w-4" aria-hidden />
+                  </Button>
+                </div>
+              ))}
+              {form.sizes.length < 6 && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() =>
+                    set("sizes", [...form.sizes, { name: "", price: "" }])
+                  }
+                  disabled={submitting}
+                >
+                  <Plus className="h-4 w-4" aria-hidden />
+                  Add size
+                </Button>
+              )}
+              <p className="text-xs text-muted-foreground">
+                Up to 6 sizes. The base price above stays as the fallback for
+                old orders made before sizes existed.
+              </p>
+            </div>
+          )}
+
+          <div className="flex items-center justify-between rounded-md border px-3 py-2.5">
+            <div>
+              <Label htmlFor="product-fields" className="cursor-pointer">
+                Custom inputs
+              </Label>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Ask customers to fill something in — each with optional/required.
+              </p>
+            </div>
+            <Switch
+              id="product-fields"
+              checked={form.hasFields}
+              onCheckedChange={(v) =>
+                set("hasFields", v)
+              }
+              disabled={submitting}
+            />
+          </div>
+
+          {/* Custom inputs — only used while the flag above is on. */}
+          {form.hasFields && (
+            <div className="grid gap-2 rounded-md border p-3">
+              <Label>Inputs to ask</Label>
+              {form.fields.map((row, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <Input
+                    value={row.label}
+                    onChange={(e) =>
+                      set(
+                        "fields",
+                        form.fields.map((r, j) =>
+                          j === i ? { ...r, label: e.target.value } : r
+                        )
+                      )
+                    }
+                    placeholder="e.g. Dedication"
+                    maxLength={30}
+                    disabled={submitting}
+                    aria-label={`Input ${i + 1} label`}
+                  />
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <Switch
+                      id={`product-field-required-${i}`}
+                      checked={row.required}
+                      onCheckedChange={(v) =>
+                        set(
+                          "fields",
+                          form.fields.map((r, j) =>
+                            j === i ? { ...r, required: v } : r
+                          )
+                        )
+                      }
+                      disabled={submitting}
+                      aria-label={`Require an answer for ${row.label || `input ${i + 1}`}`}
+                    />
+                    <Label
+                      htmlFor={`product-field-required-${i}`}
+                      className="cursor-pointer text-xs font-medium text-muted-foreground"
+                    >
+                      Required
+                    </Label>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    className="h-10 w-10 shrink-0"
+                    onClick={() =>
+                      set(
+                        "fields",
+                        form.fields.filter((_, j) => j !== i)
+                      )
+                    }
+                    disabled={submitting}
+                    aria-label={`Remove input ${row.label || i + 1}`}
+                  >
+                    <Trash2 className="h-4 w-4" aria-hidden />
+                  </Button>
+                </div>
+              ))}
+              {form.fields.length < 4 && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() =>
+                    set("fields", [...form.fields, { label: "", required: false }])
+                  }
+                  disabled={submitting}
+                >
+                  <Plus className="h-4 w-4" aria-hidden />
+                  Add input
+                </Button>
+              )}
+              <p className="text-xs text-muted-foreground">
+                Up to 4 inputs. Answers ride inside the Order QR and show on
+                every order card.
+              </p>
+            </div>
+          )}
 
           {/* Fixed serving temperature — only for items WITHOUT the Hot/Cold choice. */}
           {!form.hasTemperature && (
@@ -503,9 +807,17 @@ export default function ProductsView() {
                             : p.defaultTemperature === "COLD"
                               ? " · SERVED COLD"
                               : ""}
+                        {p.hasSizes && p.sizes.length > 0
+                          ? ` · ${p.sizes.length} sizes`
+                          : ""}
+                        {p.hasFields && p.fields.length > 0
+                          ? ` · ${p.fields.length} inputs`
+                          : ""}
                       </p>
                       <p className="mt-1 text-base font-bold text-foreground">
-                        {formatPeso(p.price)}
+                        {p.hasSizes && p.sizes.length > 0
+                          ? `From ${formatPeso(Math.min(...p.sizes.map((s) => s.price)))} · ${p.sizes.length} sizes`
+                          : formatPeso(p.price)}
                       </p>
                     </div>
                     {isAdmin && (

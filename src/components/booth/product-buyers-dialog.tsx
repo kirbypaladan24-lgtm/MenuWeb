@@ -81,6 +81,8 @@ type SortKey =
   | "customerName"
   | "customerEmail"
   | "quantity"
+  | "size"
+  | "answers"
   | "subtotal"
   | "orderTotal"
   | "createdAt";
@@ -90,6 +92,8 @@ const COLUMNS: { key: SortKey; label: string; align?: "right" }[] = [
   { key: "customerName", label: "Customer" },
   { key: "customerEmail", label: "Email" },
   { key: "quantity", label: "Qty", align: "right" },
+  { key: "size", label: "Size" },
+  { key: "answers", label: "Answers" },
   { key: "subtotal", label: "This item", align: "right" },
   { key: "orderTotal", label: "Order total", align: "right" },
   { key: "createdAt", label: "Ordered" },
@@ -108,9 +112,18 @@ function compareBuyers(a: ProductBuyer, b: ProductBuyer, key: SortKey): number {
       return a.orderId.localeCompare(b.orderId);
     case "customerEmail":
       return (a.customerEmail || "").localeCompare(b.customerEmail || "");
+    case "size":
+      return (a.size || "").localeCompare(b.size || "");
+    case "answers":
+      return answersText(a).localeCompare(answersText(b));
     default:
       return callOutName(a).localeCompare(callOutName(b));
   }
+}
+
+/** "Label: value · …" for one buyer row — table cell, sort and export share it. */
+function answersText(r: ProductBuyer): string {
+  return r.answers.map((a) => `${a.label}: ${a.value}`).join(" · ");
 }
 
 /* ------------------------------------------------------------------ */
@@ -130,6 +143,8 @@ const EXPORT_HEADERS = [
   "Email",
   "Quantity",
   "Temperature",
+  "Size",
+  "Answers",
   "This item subtotal",
   "Order total",
   "Payment method",
@@ -141,7 +156,7 @@ const EXPORT_HEADERS = [
 ] as const;
 
 /** Column indexes holding money — formatted as ₱ in the Excel export. */
-const EXPORT_MONEY_COLS = [6, 7] as const;
+const EXPORT_MONEY_COLS = [8, 9] as const;
 
 /** One export row from a buyer — shared by the Excel and CSV writers. */
 function buyerRow(r: ProductBuyer): (string | number)[] {
@@ -152,6 +167,8 @@ function buyerRow(r: ProductBuyer): (string | number)[] {
     r.customerEmail,
     r.quantity,
     r.temperature ?? "",
+    r.size ?? "",
+    answersText(r),
     r.subtotal,
     r.orderTotal,
     paymentMethodLabel(r.paymentMethod),
@@ -575,7 +592,7 @@ export function ProductBuyersDialog({
                   </TableHeader>
                   <TableBody>
                     {sorted.map((b, i) => (
-                      <TableRow key={`${b.orderId}-${b.temperature ?? "NA"}-${i}`}>
+                      <TableRow key={`${b.orderId}-${b.temperature ?? "NA"}-${b.size ?? "NA"}-${i}`}>
                         <TableCell className="whitespace-nowrap font-semibold text-foreground">
                           {shortOrderId(b.orderId)}
                         </TableCell>
@@ -612,6 +629,16 @@ export function ProductBuyersDialog({
                         </TableCell>
                         <TableCell className="text-right font-semibold">
                           {b.quantity}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-sm text-foreground">
+                          {b.size ?? (
+                            <span className="text-xs text-muted-foreground">
+                              —
+                            </span>
+                          )}
+                        </TableCell>
+                        <TableCell className="max-w-48 truncate text-xs text-muted-foreground" title={answersText(b)}>
+                          {answersText(b) || "—"}
                         </TableCell>
                         <TableCell className="text-right">
                           {formatPeso(b.subtotal)}
