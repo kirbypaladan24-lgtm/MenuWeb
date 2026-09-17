@@ -4,9 +4,9 @@
   "private": true,
   "description": "Coffee++ Booth Console \u2014 staff-side ordering system (scanner, waiting line, sales tracking). Run at the booth; pairs with the public Coffee++ client site via the customer Order QR.",
   "scripts": {
-    "dev": "next dev -p 3001",
+    "dev": "next dev -H 0.0.0.0 -p 3001",
     "build": "next build",
-    "start": "next start -p 3001",
+    "start": "next start -H 0.0.0.0 -p 3001",
     "lint": "eslint .",
     "db:push": "prisma db push --accept-data-loss",
     "db:generate": "prisma generate",

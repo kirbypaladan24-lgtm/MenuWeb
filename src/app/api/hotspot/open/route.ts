@@ -80,7 +80,10 @@ export async function POST(req: Request) {
     }
     if (password === "") password = randomPassword();
 
-    const serverPort = Number(process.env.PORT ?? 3000) || 3000;
+    // Actual listening port: `next dev/start -p 3001` sets the URL port,
+    // not process.env.PORT — so prefer the request URL, then env, then 3001.
+    const reqPort = Number(new URL(req.url).port) || 0;
+    const serverPort = Number(process.env.PORT ?? 0) || reqPort || 3001;
     const platform = process.platform;
 
     // ---- Bring the real hotspot up ------------------------------------
