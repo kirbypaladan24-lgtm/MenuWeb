@@ -21,6 +21,7 @@ import type {
   ProductSize,
   ProductStat,
   PublicProduct,
+  ServeTimeStats,
   SizeStat,
   Temperature,
   TimeOfDayBucket,
@@ -661,6 +662,79 @@ export async function computeDashboard(day: number | null): Promise<DashboardSta
     ["MORNING", "AFTERNOON", "EVENING", "NIGHT"] as const
   ).map((bucket) => ({ bucket, ...timeAgg[bucket] }));
 
+  // Fulfillment times - scan-to-serve durations, the recorded counterpart
+  // of the waiting line's live timers. Only SERVED orders with both ends
+  // of the interval contribute; aborted orders never completed.
+  const durations: { secs: number; productIds: string[]; productNames: Map<string, string> }[] = [];
+  for (const order of served) {
+    if (!order.completedAt) continue;
+    const start = order.scannedAt ?? order.createdAt;
+    const secs = (order.completedAt.getTime() - start.getTime()) / 1000;
+    if (!Number.isFinite(secs) || secs < 0) continue;
+    const seen = new Map<string, string>();
+    for (const item of order.items) {
+      if (!seen.has(item.productId)) seen.set(item.productId, item.productName);
+    }
+    durations.push({ secs, productIds: [...seen.keys()], productNames: seen });
+  }
+  const sortedSecs = durations.map((d) => d.secs).sort((a, b) => a - b);
+  const serveCount = sortedSecs.length;
+  const serveAvg =
+    serveCount > 0 ? sortedSecs.reduce((sum, s) => sum + s, 0) / serveCount : 0;
+  const serveMedian =
+    serveCount === 0
+      ? 0
+      : serveCount % 2 === 1
+        ? sortedSecs[Math.floor(serveCount / 2)]
+        : (sortedSecs[serveCount / 2 - 1] + sortedSecs[serveCount / 2]) / 2;
+  const serveTimes: ServeTimeStats = {
+    summary: {
+      count: serveCount,
+      avgSecs: Math.round(serveAvg),
+      medianSecs: Math.round(serveMedian),
+      minSecs: serveCount > 0 ? Math.round(sortedSecs[0]) : 0,
+      maxSecs: serveCount > 0 ? Math.round(sortedSecs[serveCount - 1]) : 0,
+    },
+    byProduct: Array.from(
+      durations
+        .reduce((map, d) => {
+          for (const pid of d.productIds) {
+            const entry = map.get(pid) ?? {
+              productId: pid,
+              name: d.productNames.get(pid) ?? pid,
+              totalSecs: 0,
+              orders: 0,
+            };
+            entry.totalSecs += d.secs;
+            entry.orders += 1;
+            map.set(pid, entry);
+          }
+          return map;
+        }, new Map<string, { productId: string; name: string; totalSecs: number; orders: number }>())
+        .values()
+    )
+      .map((e) => ({
+        productId: e.productId,
+        name: e.name,
+        orders: e.orders,
+        avgSecs: Math.round(e.totalSecs / e.orders),
+      }))
+      .sort((a, b) => b.avgSecs - a.avgSecs || b.orders - a.orders),
+    buckets: [
+      { label: "Under 1 min", maxSecs: 60 },
+      { label: "1-3 min", maxSecs: 180 },
+      { label: "3-5 min", maxSecs: 300 },
+      { label: "5-10 min", maxSecs: 600 },
+      { label: "Over 10 min", maxSecs: Number.POSITIVE_INFINITY },
+    ].map((b, i, all) => {
+      const minSecs = i === 0 ? 0 : all[i - 1].maxSecs;
+      return {
+        ...b,
+        count: sortedSecs.filter((s) => s >= minSecs && s < b.maxSecs).length,
+      };
+    }),
+  };
+
   return {
     revenue,
     ordersServed,
@@ -677,5 +751,6 @@ export async function computeDashboard(day: number | null): Promise<DashboardSta
     paymentBreakdown: { gcash, booth: boothRevenue },
     dailySales,
     timeOfDay,
+    serveTimes,
   };
 }

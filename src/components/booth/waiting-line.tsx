@@ -8,7 +8,7 @@
 
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Coffee, Ban, Mail, Smartphone, Volume2, Wallet } from "lucide-react";
+import { Coffee, Ban, Mail, Smartphone, Timer, Volume2, Wallet } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -23,6 +23,7 @@ import {
 import { apiFetch } from "@/lib/api";
 import { BOOTH_QK, asList, callOutName } from "./booth-utils";
 import {
+  formatElapsed,
   formatPeso,
   formatTime,
   paymentMethodLabel,
@@ -61,15 +62,27 @@ export default function WaitingLine({
 
   const count = waiting.length;
 
-  // Minutes since the order joined the line ("waiting 4 min").
-  const waitedLabel = (o: Order): string => {
+  // Live clock so every card's processing timer ticks each second —
+  // staff watch orders age in real time, not just on the 8s refetch.
+  const [now, setNow] = React.useState(() => Date.now());
+  React.useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Milliseconds since the order joined the line (scan = processing start).
+  const waitedMs = (o: Order): number | null => {
     const joined = Date.parse(o.scannedAt ?? o.createdAt);
-    if (Number.isNaN(joined)) return "";
-    const mins = Math.max(0, Math.round((Date.now() - joined) / 60_000));
-    if (mins < 1) return "just joined";
-    if (mins < 60) return `waiting ${mins} min`;
-    const h = Math.floor(mins / 60);
-    return `waiting ${h}h ${mins % 60}m`;
+    if (Number.isNaN(joined)) return null;
+    return Math.max(0, now - joined);
+  };
+
+  // Urgency color for the live timer: calm → amber (5+ min) → red (10+ min).
+  const waitedClass = (ms: number | null): string => {
+    if (ms === null) return "text-muted-foreground";
+    if (ms >= 10 * 60_000) return "font-bold text-destructive";
+    if (ms >= 5 * 60_000) return "font-bold text-warning-foreground";
+    return "font-semibold text-foreground";
   };
 
   return (
@@ -131,7 +144,7 @@ export default function WaitingLine({
           {waiting.map((o, i) => {
             const position = i + 1; // queue index: 1 = first in, first out
             const isFirst = position === 1;
-            const waited = waitedLabel(o);
+            const ms = waitedMs(o);
             return (
               <Card
                 key={o.orderId}
@@ -174,10 +187,19 @@ export default function WaitingLine({
                             </Badge>
                           )}
                         </div>
-                        <p className={cn("mt-1 text-xs font-medium", waited ? "text-muted-foreground" : "sr-only")}>
+                        <p className="mt-1 text-xs text-muted-foreground">
                           Position {position} of {count} in line
-                          {waited ? ` · ${waited}` : ""}
                         </p>
+                        {ms !== null && (
+                          <p
+                            className={cn("mt-1 inline-flex items-center gap-1.5 font-display text-3xl font-black tabular-nums leading-none", waitedClass(ms))}
+                            aria-label={`Waiting ${formatElapsed(ms)}`}
+                            title="Processing timer — scan to serve"
+                          >
+                            <Timer className="h-5 w-5" aria-hidden />
+                            {formatElapsed(ms)}
+                          </p>
+                        )}
                       </div>
                     </div>
                     <span className="shrink-0 text-lg font-bold text-foreground">

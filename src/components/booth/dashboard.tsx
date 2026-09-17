@@ -23,6 +23,7 @@ import {
   Boxes,
   Check,
   Clock3,
+  Hourglass,
   Loader2,
   Moon,
   Package,
@@ -30,9 +31,12 @@ import {
   Sunrise,
   Sun,
   Sunset,
+  Timer,
   TrendingUp,
+  Turtle,
   Users,
   Wallet,
+  Zap,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -58,7 +62,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EmptyState } from "@/components/shared/empty-state";
 import { apiFetch } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
-import { formatPeso } from "@/lib/format";
+import { formatDurationSecs, formatPeso } from "@/lib/format";
 import type { DashboardStats, Product, TimeOfDayStat } from "@/lib/types";
 import { BOOTH_QK, asList, useApiError, useBoothDays } from "./booth-utils";
 import { ViewHeader } from "./view-header";
@@ -464,6 +468,136 @@ function TimeOfDayCard({ stats }: { stats: DashboardStats }) {
   );
 }
 
+/**
+ * Fulfillment Times — the recorded counterpart of the waiting line's live
+ * timers: scan-to-serve durations across served orders (avg / median /
+ * fastest / slowest), the distribution buckets, and the per-product
+ * comparison (slowest first, so bottlenecks surface).
+ */
+function FulfillmentTimesCard({ stats }: { stats: DashboardStats }) {
+  const serve = stats.serveTimes;
+  const summary = serve?.summary;
+  const measured = summary?.count ?? 0;
+
+  if (!serve || measured === 0) {
+    return (
+      <Card className="gap-4">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Timer className="h-5 w-5 text-primary" aria-hidden />
+            Fulfillment Times
+          </CardTitle>
+          <CardDescription>
+            Scan-to-serve per order, recorded when orders are served.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="px-4 sm:px-6">
+          <p className="py-4 text-center text-sm text-muted-foreground">
+            No served orders yet — times appear once the first order is served.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const maxBucket = Math.max(...serve.buckets.map((b) => b.count), 1);
+
+  return (
+    <Card className="gap-4">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Timer className="h-5 w-5 text-primary" aria-hidden />
+          Fulfillment Times
+        </CardTitle>
+        <CardDescription>
+          Scan-to-serve per order, across {measured}{" "}
+          {measured === 1 ? "served order" : "served orders"}.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-5 px-4 sm:px-6">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <MiniStat
+            label="Avg Fulfillment"
+            value={formatDurationSecs(summary.avgSecs)}
+            icon={<Timer className="h-4 w-4" aria-hidden />}
+          />
+          <MiniStat
+            label="Median"
+            value={formatDurationSecs(summary.medianSecs)}
+            icon={<Hourglass className="h-4 w-4" aria-hidden />}
+          />
+          <MiniStat
+            label="Fastest"
+            value={formatDurationSecs(summary.minSecs)}
+            icon={<Zap className="h-4 w-4" aria-hidden />}
+            valueClass="text-success"
+          />
+          <MiniStat
+            label="Slowest"
+            value={formatDurationSecs(summary.maxSecs)}
+            icon={<Turtle className="h-4 w-4" aria-hidden />}
+            valueClass="text-destructive"
+          />
+        </div>
+
+        <div className="space-y-3">
+          {serve.buckets.map((b) => (
+            <div key={b.label} className="space-y-1.5">
+              <div className="flex items-center justify-between gap-2 text-sm">
+                <span className="font-medium text-foreground">{b.label}</span>
+                <span className="shrink-0 font-bold text-foreground">
+                  {b.count} {b.count === 1 ? "order" : "orders"}
+                </span>
+              </div>
+              <div
+                className="h-2.5 overflow-hidden rounded-full bg-muted"
+                role="progressbar"
+                aria-label={`${b.label} orders`}
+                aria-valuenow={b.count}
+                aria-valuemin={0}
+                aria-valuemax={maxBucket}
+              >
+                <div
+                  className="h-full rounded-full bg-chart-2 transition-all duration-300"
+                  style={{ width: `${(b.count / maxBucket) * 100}%` }}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {serve.byProduct.length > 0 && (
+          <div>
+            <p className="mb-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">
+              By product — slowest first
+            </p>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="pl-0">Product</TableHead>
+                  <TableHead>Orders</TableHead>
+                  <TableHead className="pr-0 text-right">Avg Time</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {serve.byProduct.map((r) => (
+                  <TableRow key={r.productId}>
+                    <TableCell className="pl-0 font-medium">{r.name}</TableCell>
+                    <TableCell>{r.orders}</TableCell>
+                    <TableCell className="pr-0 text-right font-semibold tabular-nums">
+                      {formatDurationSecs(r.avgSecs)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function Dashboard() {
   const [day, setDay] = React.useState<DayFilter>("all");
   const [buyersFor, setBuyersFor] = React.useState<Product | null>(null);
@@ -658,6 +792,9 @@ export default function Dashboard() {
 
       {/* Time-of-day demand — always visible, even before any served sale */}
       <TimeOfDayCard stats={data} />
+
+      {/* Fulfillment times — recorded scan-to-serve, always visible */}
+      <FulfillmentTimesCard stats={data} />
 
       {/* Product performance — always listed, even with zero sales:
           size sub-rows compare each size's units + revenue under its

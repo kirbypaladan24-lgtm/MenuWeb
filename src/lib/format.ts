@@ -78,3 +78,26 @@ export function dayKey(iso: string | Date): string {
 export function paymentMethodLabel(method: string): string {
   return method === "GCASH" ? "GCash" : "Pay at Booth";
 }
+
+/**
+ * Elapsed stopwatch for booth timers — "00:07", "04:32", "1:02:15".
+ * Pure duration math (no timezone involved), so server and browser agree.
+ */
+export function formatElapsed(ms: number): string {
+  const totalSecs = Math.max(0, Math.floor(ms / 1000));
+  const s = totalSecs % 60;
+  const m = Math.floor(totalSecs / 60) % 60;
+  const h = Math.floor(totalSecs / 3600);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
+}
+
+/** "45 sec" / "4 min" / "1 hr 5 min" — compact duration for stats. */
+export function formatDurationSecs(secs: number): string {
+  const s = Math.max(0, Math.round(secs));
+  if (s < 60) return `${s} sec`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m} min`;
+  const h = Math.floor(m / 60);
+  return `${h} hr ${m % 60} min`;
+}

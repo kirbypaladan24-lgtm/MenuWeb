@@ -134,6 +134,37 @@ export interface SizeStat {
   revenue: number;
 }
 
+/** Fulfillment-time summary: scan-to-serve durations (served orders only). */
+export interface ServeTimeSummary {
+  count: number; // served orders with a measurable duration
+  avgSecs: number;
+  medianSecs: number;
+  minSecs: number;
+  maxSecs: number;
+}
+
+/** Avg fulfillment per product — mean scan-to-serve over served orders
+ *  containing it (shared queue time included, so compare relatively). */
+export interface ProductServeStat {
+  productId: string;
+  name: string;
+  orders: number; // served orders containing this product
+  avgSecs: number;
+}
+
+/** Duration histogram bucket. */
+export interface ServeTimeBucket {
+  label: string;
+  maxSecs: number; // inclusive upper bound (Infinity for the last bucket)
+  count: number;
+}
+
+export interface ServeTimeStats {
+  summary: ServeTimeSummary;
+  byProduct: ProductServeStat[];
+  buckets: ServeTimeBucket[];
+}
+
 export interface HotColdStat {
   productId: string;
   name: string;
@@ -173,6 +204,7 @@ export interface DashboardStats {
   paymentBreakdown: { gcash: number; booth: number };
   dailySales: DailySalesStat[];
   timeOfDay: TimeOfDayStat[]; // fixed order: MORNING → AFTERNOON → EVENING → NIGHT
+  serveTimes: ServeTimeStats; // scan-to-serve fulfillment (served orders only)
 }
 
 /** API error payload */
