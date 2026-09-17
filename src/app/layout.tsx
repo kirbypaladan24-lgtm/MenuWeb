@@ -4,6 +4,8 @@ import { Fraunces, Plus_Jakarta_Sans } from "next/font/google";
 import { ThemeProvider } from "next-themes";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
+import { PauseProvider } from "@/lib/pause-context";
+import { GlobalPauseModal } from "@/components/booth/pause-console";
 
 const fraunces = Fraunces({
   variable: "--font-fraunces",
@@ -48,7 +50,10 @@ export default function RootLayout({
           enableSystem={false}
           enableColorScheme={false}
         >
-          {children}
+          <PauseProvider>
+            {children}
+            <GlobalPauseModal />
+          </PauseProvider>
           <Toaster />
         </ThemeProvider>
       </body>
