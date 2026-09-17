@@ -653,8 +653,10 @@ export function HotspotPanel({ onScanEvent }: HotspotPanelProps) {
             <div className="w-full min-w-0 flex-1 space-y-2">
               <p className="text-[11px] leading-relaxed text-muted-foreground">
                 Join the booth Wi-Fi on the phone first (Android settings, the
-                real hotspot password), then let the phone scanner app scan
-                this link — or type it — once in its settings:
+                real hotspot password) with mobile data OFF — Android otherwise
+                jumps networks mid-request and the link drops. Then let the
+                phone scanner app scan this link — or type it — once in its
+                settings:
               </p>
               {primaryUrl ? (
                 <div className="flex min-h-11 items-center justify-between gap-2 rounded-lg border px-3 py-1.5">

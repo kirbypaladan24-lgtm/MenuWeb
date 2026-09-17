@@ -105,6 +105,16 @@ class HotspotStore {
     this.totalScans = 0;
   }
 
+  /**
+   * Refresh the advertised server URLs without killing the session
+   * (phones list + scan feed survive). Fixes the stale-QR fault where the
+   * session was opened before the hotspot IP existed: re-pressing Open
+   * Hotspot now picks up 192.168.137.1 instead of re-serving the old list.
+   */
+  refreshUrls(urls: string[]): void {
+    if (this.session) this.session.urls = urls;
+  }
+
   /** Log one received phone scan (the Scanner's live feed + history). */
   recordEvent(input: RecordEventInput): HotspotScanEvent {
     const event: HotspotScanEvent = {

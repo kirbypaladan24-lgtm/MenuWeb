@@ -31,6 +31,9 @@ import { join } from "node:path";
 export const HOTSPOT_PROFILE = "CoffeePP-Booth";
 /** Fixed Windows firewall rule name (so re-adding replaces, not duplicates). */
 export const FIREWALL_RULE_NAME = "CoffeePP Booth Server";
+/** Windows' own program rule for Node — a Public Block here silently drops
+ *  phone packets even when our port rule allows them (block beats allow). */
+export const NODE_PROGRAM_RULE = "Node.js JavaScript Runtime";
 
 /* ------------------------------------------------------------------ */
 /* Process helpers                                                     */
@@ -569,6 +572,58 @@ try{
   const elevated = await runElevatedScript(scriptBody);
   if (elevated.declined) return null; // UAC declined
   return elevated.log !== null && elevated.log.includes("CPP:OK:FW");
+}
+
+/**
+ * Is Node.js program-blocked on Public networks? Read-only (no elevation).
+ * The booth hotspot adapter is classified Public, so a Block here drops
+ * every phone packet — while laptop self-tests on loopback still pass,
+ * which makes it look like "the app" is broken.
+ */
+export async function nodeProgramBlockedOnPublic(): Promise<boolean> {
+  const res = await run("netsh", [
+    "advfirewall",
+    "firewall",
+    "show",
+    "rule",
+    `name=${NODE_PROGRAM_RULE}`,
+  ], 15_000);
+  const text = `${res.out}\n${res.err}`;
+  if (!/Rule Name:/i.test(text)) return false; // no program rules at all
+  for (const chunk of text.split(/Rule Name:/i).slice(1)) {
+    if (
+      /Direction:\s*In/i.test(chunk) &&
+      /Action:\s*Block/i.test(chunk) &&
+      /Profiles:.*Public/i.test(chunk)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Flip Node.js Public Block → Allow (ONE UAC approval, same prompt round-
+ * trip as the port rule). Returns null when the UAC prompt was declined,
+ * false when elevation ran but the block is still there, true when clear.
+ */
+export async function ensureNodePublicAllow(): Promise<boolean | null> {
+  if (!(await nodeProgramBlockedOnPublic())) return true;
+
+  const scriptBody = `
+$ErrorActionPreference='Continue'
+$log='%LOG%'
+function L([string]$s){ Add-Content -Path $log -Value $s -Encoding UTF8 }
+try{
+  Get-NetFirewallRule -DisplayName '${NODE_PROGRAM_RULE}' | Where-Object { $_.Direction -eq 'Inbound' -and $_.Action -eq 'Block' } | Set-NetFirewallRule -Action Allow
+  $left = @(Get-NetFirewallRule -DisplayName '${NODE_PROGRAM_RULE}' | Where-Object { $_.Direction -eq 'Inbound' -and $_.Action -eq 'Block' -and $_.Profile -match 'Public' })
+  if($left.Count -eq 0){ L 'CPP:OK:NODEFW' } else { L 'CPP:ERR:NODEFWSTILLBLOCKED' }
+}catch{ L ('CPP:ERR:EXCEPTION:'+($_.Exception.Message)) }
+`;
+  const elevated = await runElevatedScript(scriptBody);
+  if (elevated.declined) return null; // UAC declined
+  if (elevated.log !== null && elevated.log.includes("CPP:OK:NODEFW")) return true;
+  return (await nodeProgramBlockedOnPublic()) ? false : true;
 }
 
 /* ------------------------------------------------------------------ */

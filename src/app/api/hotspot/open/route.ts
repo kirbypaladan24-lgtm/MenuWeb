@@ -22,6 +22,7 @@ import {
   enableLinuxHotspot,
   enableWindowsHostedNetwork,
   enableWindowsMobileHotspot,
+  ensureNodePublicAllow,
   ensureWindowsFirewallRule,
   findWifiIface,
   localCandidateUrls,
@@ -60,8 +61,17 @@ export async function POST(req: Request) {
 
     const body = (await readJson(req)) ?? {};
 
-    // Idempotent — the panel may re-open after a view switch.
+    // Idempotent — but refresh the URLs every time: the session may have
+    // been opened before the hotspot IP existed (stale QR fault), and a
+    // dev-server restart is the only thing that clears the session.
     if (hotspotStore.session?.active) {
+      const port = hotspotStore.session.serverPort;
+      const fresh = localCandidateUrls(port).map((c) => c.url);
+      const merged = [
+        ...hotspotStore.session.urls.filter((u) => fresh.includes(u)),
+        ...fresh.filter((u) => !hotspotStore.session!.urls.includes(u)),
+      ];
+      hotspotStore.refreshUrls(merged.length > 0 ? merged : fresh);
       return corsJson(statusResponse());
     }
 
@@ -144,10 +154,14 @@ export async function POST(req: Request) {
       }
 
       // Phones must be able to REACH the server: Windows Firewall blocks
-      // inbound by default. Best effort — a declined UAC only downgrades
-      // to a hint, never to manual mode.
+      // inbound by default — two layers: our port rule AND Node's own
+      // program rule (a Public Block there drops phone packets even when
+      // the port rule allows them). Best effort — a declined UAC only
+      // downgrades to a hint, never to manual mode.
       const fw = await ensureWindowsFirewallRule(serverPort);
       if (fw === null) firewallHint = true;
+      const nodeFw = await ensureNodePublicAllow();
+      if (nodeFw !== true) firewallHint = true;
     } else {
       autoError = `Automatic hotspot setup isn't supported on ${platform} — use the manual steps below.`;
     }
