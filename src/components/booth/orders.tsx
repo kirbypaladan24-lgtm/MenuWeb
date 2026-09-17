@@ -53,7 +53,6 @@ import {
   PaymentStatusBadge,
 } from "@/components/shared/status-badge";
 import { apiFetch } from "@/lib/api";
-import { BOOTH_DAYS } from "@/lib/constants";
 import { useToast } from "@/hooks/use-toast";
 import {
   formatDateTime,
@@ -62,11 +61,11 @@ import {
   shortOrderId,
 } from "@/lib/format";
 import type { Order, OrderStatus, PaymentMethod, PaymentStatus } from "@/lib/types";
-import { BOOTH_QK, asList, callOutName, useApiError } from "./booth-utils";
+import { BOOTH_QK, asList, callOutName, useApiError, useBoothDays } from "./booth-utils";
 import { ViewHeader } from "./view-header";
 
 type StatusFilter = "ALL" | OrderStatus;
-type DayFilter = "all" | "1" | "2" | "3";
+type DayFilter = "all" | `${number}`;
 
 const STATUS_TABS: { value: StatusFilter; label: string }[] = [
   { value: "ALL", label: "All" },
@@ -285,6 +284,7 @@ export default function OrdersView() {
 
   const [status, setStatus] = React.useState<StatusFilter>("ALL");
   const [day, setDay] = React.useState<DayFilter>("all");
+  const { days: boothDays } = useBoothDays();
   const [search, setSearch] = React.useState("");
   const [debounced, setDebounced] = React.useState("");
 
@@ -415,13 +415,18 @@ export default function OrdersView() {
         </div>
 
         <Tabs value={day} onValueChange={(v) => setDay(v as DayFilter)} className="shrink-0">
-          <TabsList>
-            <TabsTrigger value="all" className="text-xs sm:text-sm">
+          <TabsList className="max-w-full overflow-x-auto">
+            <TabsTrigger value="all" className="shrink-0 text-xs sm:text-sm">
               All Days
             </TabsTrigger>
-            {BOOTH_DAYS.map((d, i) => (
-              <TabsTrigger key={d} value={String(i + 1)} className="text-xs sm:text-sm">
-                {d}
+            {boothDays.map((d) => (
+              <TabsTrigger
+                key={d.n}
+                value={String(d.n)}
+                title={d.dateLabel}
+                className="shrink-0 text-xs sm:text-sm"
+              >
+                {d.label}
               </TabsTrigger>
             ))}
           </TabsList>

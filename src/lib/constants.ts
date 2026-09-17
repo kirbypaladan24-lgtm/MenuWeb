@@ -1,6 +1,6 @@
 // Coffee++ shared constants
-
-export const BOOTH_DAYS = ["Day 1", "Day 2", "Day 3"] as const;
+// (Booth day tabs are derived from the booth dates via useBoothDays() —
+// the run length lives in Settings, not here.)
 
 export const ABORT_REASONS = [
   "Customer cancelled",

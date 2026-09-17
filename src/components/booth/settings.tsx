@@ -430,7 +430,7 @@ export default function SettingsView() {
             </CardHeader>
             <CardContent>
               <p className="text-sm leading-relaxed text-muted-foreground">
-                Coffee++ is a 3-day campus booth ordering and sales tracking system.
+                Coffee++ is a campus booth ordering and sales tracking system.
                 Customers order from the menu on their phones and show their Order QR at
                 the booth; staff scan it, verify payment, and track sales in real time.
               </p>

@@ -58,14 +58,13 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EmptyState } from "@/components/shared/empty-state";
 import { apiFetch } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
-import { BOOTH_DAYS } from "@/lib/constants";
 import { formatPeso } from "@/lib/format";
 import type { DashboardStats, Product, TimeOfDayStat } from "@/lib/types";
-import { BOOTH_QK, asList, useApiError } from "./booth-utils";
+import { BOOTH_QK, asList, useApiError, useBoothDays } from "./booth-utils";
 import { ViewHeader } from "./view-header";
 import { ProductBuyersDialog } from "./product-buyers-dialog";
 
-type DayFilter = "all" | "1" | "2" | "3";
+type DayFilter = "all" | `${number}`;
 
 /** Presentation meta for the four time-of-day buckets. */
 const TIME_OF_DAY_META: {
@@ -468,6 +467,7 @@ function TimeOfDayCard({ stats }: { stats: DashboardStats }) {
 export default function Dashboard() {
   const [day, setDay] = React.useState<DayFilter>("all");
   const [buyersFor, setBuyersFor] = React.useState<Product | null>(null);
+  const { days: boothDays } = useBoothDays();
 
   const { data, isLoading, isError, refetch, isFetching } = useQuery({
     queryKey: ["booth", "dashboard", day],
@@ -552,13 +552,18 @@ export default function Dashboard() {
               </span>
             )}
             <Tabs value={day} onValueChange={(v) => setDay(v as DayFilter)}>
-              <TabsList>
-                <TabsTrigger value="all" className="text-xs sm:text-sm">
+              <TabsList className="max-w-full overflow-x-auto">
+                <TabsTrigger value="all" className="shrink-0 text-xs sm:text-sm">
                   All
                 </TabsTrigger>
-                {BOOTH_DAYS.map((d, i) => (
-                  <TabsTrigger key={d} value={String(i + 1)} className="text-xs sm:text-sm">
-                    {d}
+                {boothDays.map((d) => (
+                  <TabsTrigger
+                    key={d.n}
+                    value={String(d.n)}
+                    title={d.dateLabel}
+                    className="shrink-0 text-xs sm:text-sm"
+                  >
+                    {d.label}
                   </TabsTrigger>
                 ))}
               </TabsList>

@@ -146,19 +146,42 @@ export function localTimeKey(d: Date): string {
   return `${h}:${min}`;
 }
 
-/** Parse `day` query param: "1"|"2"|"3" → booth day, otherwise null (no filter). */
-export function parseDayFilter(raw: string | null): 1 | 2 | 3 | null {
-  if (raw === "1" || raw === "2" || raw === "3") {
-    return Number(raw) as 1 | 2 | 3;
-  }
-  return null; // "all", "", or anything else
+/** Parse `day` query param: "1".."N" → booth day number, otherwise null (no filter). */
+export function parseDayFilter(raw: string | null): number | null {
+  if (raw === null) return null;
+  const trimmed = raw.trim();
+  if (!/^[1-9]\d*$/.test(trimmed)) return null;
+  const n = Number(trimmed);
+  return Number.isSafeInteger(n) ? n : null;
+}
+
+/**
+ * How many calendar days the booth run spans, inclusive (local server
+ * time), derived from the booth dates — the run length is data, not a
+ * constant. Day 1 = the calendar date of startDate. Minimum 1 so a
+ * same-day or inverted range still yields one day.
+ */
+export function boothDayCount(startDate: Date, endDate: Date): number {
+  const start = new Date(startDate);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(endDate);
+  end.setHours(0, 0, 0, 0);
+  const diff = Math.round((end.getTime() - start.getTime()) / 86_400_000) + 1;
+  return diff >= 1 ? diff : 1;
 }
 
 /**
  * Calendar window for a booth day (local server time).
  * day 1 = the calendar date of booth.startDate, day 2 = the next date, etc.
+ * Out-of-range days (day < 1 or past the last booth day) return null —
+ * callers treat that as "no filter" instead of an empty window.
  */
-export function dayWindowFrom(startDate: Date, day: 1 | 2 | 3): { start: Date; end: Date } {
+export function dayWindowFrom(
+  startDate: Date,
+  day: number,
+  dayCount: number
+): { start: Date; end: Date } | null {
+  if (!Number.isInteger(day) || day < 1 || day > dayCount) return null;
   const start = new Date(startDate);
   start.setHours(0, 0, 0, 0);
   start.setDate(start.getDate() + (day - 1));
@@ -215,13 +238,17 @@ export async function findOrderRow(orderId: string): Promise<OrderRow | null> {
 export interface ListOrdersOptions {
   status?: string | null;
   q?: string | null;
-  day: 1 | 2 | 3 | null;
+  day: number | null;
 }
 
 /** Booth order list: newest first, with items. status/q/day filters. */
 export async function listOrders(opts: ListOrdersOptions): Promise<Order[]> {
   const booth = await getBoothRow();
-  const window = opts.day ? dayWindowFrom(booth.startDate, opts.day) : null;
+  const dayCount = boothDayCount(booth.startDate, booth.endDate);
+  const window =
+    opts.day !== null && opts.day !== undefined
+      ? dayWindowFrom(booth.startDate, opts.day, dayCount)
+      : null;
   const status =
     opts.status && VALID_STATUSES.includes(opts.status) ? opts.status : undefined;
 
@@ -295,9 +322,13 @@ export async function listProductBuyers(productId: string): Promise<ProductBuyer
  * Net Profit = Revenue − Total Cost (the amount the admin typed in the
  * Total Cost box — stock, per-product costs and expense ledgers are gone).
  */
-export async function computeDashboard(day: 1 | 2 | 3 | null): Promise<DashboardStats> {
+export async function computeDashboard(day: number | null): Promise<DashboardStats> {
   const booth = await getBoothRow();
-  const window = day ? dayWindowFrom(booth.startDate, day) : null;
+  const dayCount = boothDayCount(booth.startDate, booth.endDate);
+  const window =
+    day !== null && day !== undefined
+      ? dayWindowFrom(booth.startDate, day, dayCount)
+      : null;
 
   const orders = await db.order.findMany({
     where: window ? { createdAt: { gte: window.start, lt: window.end } } : undefined,
