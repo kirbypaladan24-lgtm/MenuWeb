@@ -94,6 +94,7 @@ interface SettingsForm {
   endDate: string;
   gcashNumber: string;
   gcashPayment: boolean;
+  orderingEnabled: boolean;
   specsNumber: string;
   contactEmail: string;
   clientSiteUrl: string;
@@ -143,6 +144,7 @@ export default function SettingsView() {
         endDate: isoToLocalInput(data.settings.endDate),
         gcashNumber: data.settings.gcashNumber ?? "",
         gcashPayment: data.settings.gcashPayment ?? true,
+        orderingEnabled: data.settings.orderingEnabled ?? true,
         specsNumber: data.settings.specsNumber ?? "",
         contactEmail: data.settings.contactEmail ?? "",
         clientSiteUrl: data.settings.clientSiteUrl ?? "",
@@ -176,6 +178,7 @@ export default function SettingsView() {
           endDate: localInputToIso(form.endDate),
           gcashNumber: form.gcashNumber.trim(),
           gcashPayment: form.gcashPayment,
+          orderingEnabled: form.orderingEnabled,
           specsNumber: form.specsNumber.trim(),
           contactEmail: form.contactEmail.trim(),
           clientSiteUrl: form.clientSiteUrl.trim(),
@@ -303,6 +306,24 @@ export default function SettingsView() {
                     disabled={!isAdmin || saving}
                   />
                 </Field>
+              </div>
+
+              <div className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2.5">
+                <div className="min-w-0">
+                  <Label htmlFor="settings-ordering-enabled" className="font-semibold">
+                    Online ordering
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Off turns the client site into a menu only — no order form, no Order QR.
+                  </p>
+                </div>
+                <Switch
+                  id="settings-ordering-enabled"
+                  checked={form.orderingEnabled}
+                  onCheckedChange={(v) => set("orderingEnabled", v)}
+                  disabled={!isAdmin || saving}
+                  aria-label="Allow online ordering on the client site"
+                />
               </div>
 
               <div className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2.5">

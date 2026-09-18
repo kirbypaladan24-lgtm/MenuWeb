@@ -67,6 +67,7 @@ model Booth {
   totalCost   Int      @default(0) // typed by the admin — money spent running the booth
   gcashNumber String   @default("")
   gcashPayment Boolean @default(true) // false = GCash off: customers pay at the booth only
+  orderingEnabled Boolean @default(true) // false = client site is menu-only (no self-ordering / QR)
   specsNumber String   @default("")
   contactEmail String  @default("") // shown on the client site's contact card
   clientSiteUrl String @default("") // deployed customer web menu URL — shown as a QR on the Scanner view

@@ -246,6 +246,7 @@ export function serializeBooth(b: BoothRow): BoothSettings {
     totalCost: b.totalCost,
     gcashNumber: b.gcashNumber,
     gcashPayment: b.gcashPayment,
+    orderingEnabled: b.orderingEnabled,
     specsNumber: b.specsNumber,
     contactEmail: b.contactEmail,
     clientSiteUrl: b.clientSiteUrl,

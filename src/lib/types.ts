@@ -108,6 +108,7 @@ export interface BoothSettings {
   totalCost: number; // typed by the admin — feeds Net Profit & ROI
   gcashNumber: string;
   gcashPayment: boolean; // false = GCash off: customers pay at the booth only
+  orderingEnabled: boolean; // false = client site is menu-only (no self-ordering)
   specsNumber: string;
   contactEmail: string; // exported to the client site's contact card
   clientSiteUrl: string; // deployed customer web menu URL — QR on the Scanner view

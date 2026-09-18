@@ -111,6 +111,7 @@ async function main() {
       totalCost: 0,
       gcashNumber: "0917 123 4567",
       gcashPayment: true,
+      orderingEnabled: true,
       specsNumber: "09123456789",
       contactEmail: "parsu.specs@gmail.com",
       clientSiteUrl: "", // set after the client site is deployed — feeds the Scanner QR

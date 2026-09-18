@@ -21,16 +21,18 @@ export async function GET(req: Request) {
     const products = await db.product.findMany({ orderBy: { id: "asc" } });
 
     const menu = {
-      // Schema v5: booth may carry gcashPayment (false = GCash off);
+      // Schema v6: booth may carry gcashPayment (false = GCash off) and
+      // orderingEnabled (false = client is menu-only, no self-ordering);
       // products may carry hasSizes + sizes and hasFields + fields.
       // Kept in sync with the client's src/data/menu.json version.
-      version: 5,
+      version: 6,
       booth: {
         boothName: settings.boothName,
         startDate: settings.startDate,
         endDate: settings.endDate,
         gcashNumber: settings.gcashNumber,
         gcashPayment: settings.gcashPayment,
+        orderingEnabled: settings.orderingEnabled,
         specsNumber: settings.specsNumber,
         contactEmail: settings.contactEmail,
       },

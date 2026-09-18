@@ -60,6 +60,12 @@ export async function PATCH(req: Request) {
       gcashPayment = body.gcashPayment;
     }
 
+    let orderingEnabled = row.orderingEnabled;
+    if ("orderingEnabled" in body) {
+      if (typeof body.orderingEnabled !== "boolean") fail(400, "orderingEnabled must be true or false");
+      orderingEnabled = body.orderingEnabled;
+    }
+
     let specsNumber = row.specsNumber;
     if ("specsNumber" in body) {
       if (typeof body.specsNumber !== "string") fail(400, "specsNumber must be a string");
@@ -93,7 +99,7 @@ export async function PATCH(req: Request) {
 
     const updated = await db.booth.update({
       where: { id: row.id },
-      data: { boothName, startDate, endDate, totalCost, gcashNumber, gcashPayment, specsNumber, contactEmail, clientSiteUrl },
+      data: { boothName, startDate, endDate, totalCost, gcashNumber, gcashPayment, orderingEnabled, specsNumber, contactEmail, clientSiteUrl },
     });
 
     return NextResponse.json({ settings: serializeBooth(updated) });
