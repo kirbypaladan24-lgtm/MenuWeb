@@ -1093,13 +1093,12 @@ export default function Scanner() {
         description="Scan a customer's Order QR to register their order — it carries their call-out name, email, items and total. The camera stays live the whole time, so you can scan back-to-back without closing anything. Want more of the same order? Scan the same QR again — each scan adds another copy. No camera? Paste the payload or type the Order ID below — or open the hotspot and scan with a phone."
       />
 
-      {/* Scanner + customer web-menu QR — side by side as a centered pair
-          on large screens (the web-menu QR sits to the LEFT of the scanner,
-          the pair stays centered on the page with a generous gap between
-          the two); stacked with the scanner first on small screens. */}
-      <div className="flex flex-col gap-8 lg:flex-row lg:items-start lg:justify-center lg:gap-16">
+      {/* Scanner trio — QR link | camera | Manual Order square. On large
+          screens the three sit side by side, centered with room to breathe;
+          stacked with the scanner first on small screens. */}
+      <div className="flex flex-col gap-8 lg:flex-row lg:items-start lg:justify-center lg:gap-8 xl:gap-12">
         {/* The scanner itself — camera + manual entry (the primary tool) */}
-        <div className="order-1 mx-auto flex w-full max-w-sm flex-col gap-4 lg:order-2 lg:mx-0">
+        <div className="order-1 mx-auto flex w-full max-w-sm flex-col gap-4 lg:order-2 lg:mx-0 lg:max-w-xs xl:max-w-sm">
           {/* Camera view — NEVER unmounts: it previews through every phase
               so back-to-back scanning works without restart delays. */}
           <div className="w-full space-y-2">
@@ -1181,26 +1180,35 @@ export default function Scanner() {
                 works even without a camera.
               </p>
             </form>
-            <Button
-              type="button"
-              variant="outline"
-              className="h-12 w-full text-base font-semibold"
-              onClick={() => setManualOpen(true)}
-            >
-              <ClipboardList aria-hidden />
-              Manual Order
-            </Button>
-            <p className="text-center text-xs text-muted-foreground">
-              Walk-in customer or camera trouble? Create a Manual Order — the ID
-              is assigned automatically.
-            </p>
           </div>
         </div>
 
         {/* Customer web-menu QR — to the LEFT of the scanner; walk-bys scan
             it to order from their phone */}
-        <div className="order-2 mx-auto w-full max-w-sm lg:order-1 lg:mx-0">
+        <div className="order-2 mx-auto w-full max-w-sm lg:order-1 lg:mx-0 lg:max-w-xs xl:max-w-sm">
           <WebMenuQR />
+        </div>
+
+        {/* Manual Order — big square tile to the RIGHT of the scanner,
+            sized like the QR frame; walk-ins and camera failures go here */}
+        <div className="order-3 mx-auto w-full max-w-sm lg:mx-0 lg:max-w-xs xl:max-w-sm">
+          <button
+            type="button"
+            onClick={() => setManualOpen(true)}
+            aria-label="Create a Manual Order for walk-in customers"
+            className="group flex aspect-square w-full flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-primary/40 bg-card p-6 text-center transition-colors hover:border-primary hover:bg-primary/5 focus-visible:outline-2 focus-visible:outline-primary"
+          >
+            <span className="flex h-20 w-20 items-center justify-center rounded-2xl bg-primary/10 text-primary transition-transform duration-200 group-hover:scale-105">
+              <ClipboardList className="h-10 w-10" aria-hidden />
+            </span>
+            <span className="font-display text-2xl font-bold text-foreground">
+              Manual Order
+            </span>
+            <span className="max-w-56 text-xs leading-relaxed text-muted-foreground">
+              Walk-in customer or camera trouble? Tap here — the Order ID is
+              assigned automatically.
+            </span>
+          </button>
         </div>
       </div>
 
