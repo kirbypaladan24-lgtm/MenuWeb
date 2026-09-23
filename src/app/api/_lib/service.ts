@@ -209,6 +209,7 @@ export function toPublicProduct(p: ProductRow): PublicProduct {
 
 function serializeItem(i: ItemRow): OrderItem {
   return {
+    id: i.id,
     productId: i.productId,
     productName: i.productName,
     temperature: asTemperature(i.temperature),
@@ -383,7 +384,9 @@ export interface ListOrdersOptions {
   day: number | null;
 }
 
-/** Booth order list: newest first, with items. status/q/day filters. */
+/** Booth order list: newest first, with items. status/q/day filters.
+ *  `day` matches the SCAN (registration) day — when the order entered the
+ *  booth — falling back to creation day for orders never scanned. */
 export async function listOrders(opts: ListOrdersOptions): Promise<Order[]> {
   const booth = await getBoothRow();
   const dayCount = boothDayCount(booth.startDate, booth.endDate);
@@ -394,10 +397,29 @@ export async function listOrders(opts: ListOrdersOptions): Promise<Order[]> {
   const status =
     opts.status && VALID_STATUSES.includes(opts.status) ? opts.status : undefined;
 
+  // Day windows anchor on scannedAt (when the booth did the work), not
+  // createdAt (when the customer tapped order on their phone) — a 11pm
+  // order scanned next morning belongs to the next booth day. Rows with
+  // no scan timestamp fall back to createdAt.
+  const dayFilter = window
+    ? {
+        OR: [
+          { scannedAt: { gte: window.start, lt: window.end } },
+          { scannedAt: null, createdAt: { gte: window.start, lt: window.end } },
+        ],
+      }
+    : {};
   const rows = await db.order.findMany({
     where: {
       ...(status ? { orderStatus: status } : {}),
-      ...(window ? { createdAt: { gte: window.start, lt: window.end } } : {}),
+      ...(window
+        ? {
+            OR: [
+              { scannedAt: { gte: window.start, lt: window.end } },
+              { scannedAt: null, createdAt: { gte: window.start, lt: window.end } },
+            ],
+          }
+        : {}),
     },
     include: { items: true },
     orderBy: [{ createdAt: "desc" }, { orderId: "desc" }],
@@ -462,6 +484,7 @@ export async function listProductBuyers(productId: string): Promise<ProductBuyer
 interface ProductAgg {
   productId: string;
   name: string;
+  category: string | null; // catalog category — null for off-menu lines
   sold: number;
   revenue: number;
   hot: number;
@@ -516,7 +539,7 @@ function toProductStat(
 
 /**
  * Aggregate dashboard stats.
- * `day` filters orders by creation day window (same rule as /api/orders).
+ * `day` filters orders by SCAN day window (same rule as /api/orders).
  * Only SERVED orders contribute revenue / items.
  * Net Profit = Revenue − Total Cost (the amount the admin typed in the
  * Total Cost box — stock, per-product costs and expense ledgers are gone).
@@ -529,8 +552,17 @@ export async function computeDashboard(day: number | null): Promise<DashboardSta
       ? dayWindowFrom(booth.startDate, day, dayCount)
       : null;
 
+  // Same booth-day anchor as listOrders: scannedAt first (the work),
+  // createdAt only when no scan timestamp exists.
   const orders = await db.order.findMany({
-    where: window ? { createdAt: { gte: window.start, lt: window.end } } : undefined,
+    where: window
+      ? {
+          OR: [
+            { scannedAt: { gte: window.start, lt: window.end } },
+            { scannedAt: null, createdAt: { gte: window.start, lt: window.end } },
+          ],
+        }
+      : undefined,
     include: { items: true },
   });
   const products = await db.product.findMany({ orderBy: { id: "asc" } });
@@ -545,6 +577,7 @@ export async function computeDashboard(day: number | null): Promise<DashboardSta
 
   const aggById = new Map<string, ProductAgg>();
   let itemsSold = 0;
+  const categoryById = new Map(products.map((p) => [p.id, p.category]));
 
   for (const order of served) {
     for (const item of order.items) {
@@ -553,6 +586,7 @@ export async function computeDashboard(day: number | null): Promise<DashboardSta
       const agg = aggById.get(item.productId) ?? {
         productId: item.productId,
         name: item.productName,
+        category: categoryById.get(item.productId) ?? null,
         sold: 0,
         revenue: 0,
         hot: 0,
@@ -599,6 +633,34 @@ export async function computeDashboard(day: number | null): Promise<DashboardSta
   const bestSeller: DashboardStats["bestSeller"] =
     top && top.sold > 0 ? { name: top.name, sold: top.sold } : null;
 
+  // Best seller per category — catalog categories in menu order (Drinks,
+  // Pastries, Extras), then any custom ones alphabetically. Off-menu
+  // lines have no category and only count toward the overall crown.
+  const categoryOrder = new Map<string, number>();
+  for (const p of products) {
+    if (!categoryOrder.has(p.category)) categoryOrder.set(p.category, categoryOrder.size);
+  }
+  const bestByCat = new Map<string, { name: string; sold: number }>();
+  for (const a of aggById.values()) {
+    if (a.sold === 0 || !a.category) continue;
+    const current = bestByCat.get(a.category);
+    if (
+      !current ||
+      a.sold > current.sold ||
+      (a.sold === current.sold && a.name.localeCompare(current.name) < 0)
+    ) {
+      bestByCat.set(a.category, { name: a.name, sold: a.sold });
+    }
+  }
+  const bestSellerByCategory = Array.from(bestByCat.entries())
+    .map(([category, v]) => ({ category, name: v.name, sold: v.sold }))
+    .sort(
+      (a, b) =>
+        (categoryOrder.get(a.category) ?? Number.MAX_SAFE_INTEGER) -
+          (categoryOrder.get(b.category) ?? Number.MAX_SAFE_INTEGER) ||
+        a.category.localeCompare(b.category)
+    );
+
   const hotCold: HotColdStat[] = products
     .filter((p) => p.hasTemperature)
     .map((p) => {
@@ -616,7 +678,10 @@ export async function computeDashboard(day: number | null): Promise<DashboardSta
   const dailyMap = new Map<string, { revenue: number; orders: number }>();
   for (const order of served) {
     if (!order.completedAt) continue;
-    const key = localDateKey(order.completedAt);
+    // Revenue day = scan day (when the order entered the booth), matching
+    // the day filter and the time-of-day buckets — not the customer-side
+    // creation time, which can predate the event by days.
+    const key = localDateKey(order.scannedAt ?? order.createdAt);
     const entry = dailyMap.get(key) ?? { revenue: 0, orders: 0 };
     entry.revenue += order.total;
     entry.orders += 1;
@@ -747,6 +812,7 @@ export async function computeDashboard(day: number | null): Promise<DashboardSta
     netProfit,
     roi,
     bestSeller,
+    bestSellerByCategory,
     productStats,
     hotCold,
     paymentBreakdown: { gcash, booth: boothRevenue },

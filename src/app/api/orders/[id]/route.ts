@@ -2,7 +2,9 @@
 // The customer site no longer creates orders here, so a 404 means the
 // order has not been registered at the booth yet.
 // PATCH /api/orders/[id] — ADMIN: edit order data (customer names, email,
-//   payment method / status). Status itself is owned by /serve and /abort.
+//   payment method / status, and per-line size + custom answers via `items`).
+//   Changing a size re-prices that line at the CURRENT menu price and
+//   re-totals the order. Status itself is owned by /serve and /abort.
 // DELETE /api/orders/[id] — ADMIN: permanently remove an order record.
 //   A SERVED order's quantities are subtracted from the product sold
 //   counters so reports stay accurate.
@@ -11,7 +13,7 @@ import { db } from "@/lib/db";
 import { requireRole } from "@/lib/auth";
 import type { Prisma } from "@prisma/client";
 import { errorResponse, fail, normalizeOrderId, readJson, unauthorized } from "@/app/api/_lib/http";
-import { findOrderRow, serializeOrder } from "@/app/api/_lib/service";
+import { findOrderRow, parseOrderAnswers, parseProductFields, parseProductSizes, serializeOrder } from "@/app/api/_lib/service";
 
 export const dynamic = "force-dynamic";
 
@@ -77,8 +79,96 @@ export async function PATCH(req: Request, { params }: RouteContext) {
       data.paymentStatus = body.paymentStatus;
     }
 
-    if (Object.keys(data).length === 0) {
-      fail(400, "Nothing to update — provide customerName, customerAlias, customerEmail, paymentMethod or paymentStatus");
+    if (Object.keys(data).length === 0 && !("items" in body)) {
+      fail(400, "Nothing to update — provide customerName, customerAlias, customerEmail, paymentMethod, paymentStatus or items");
+    }
+
+    // Per-line size + custom answers. Normalization mirrors the register
+    // pipeline (canonicalize, fall back, never block a save): sizes resolve
+    // against the CURRENT menu, answers against the CURRENT field defs.
+    // A changed size re-prices its line and re-totals the whole order.
+    if ("items" in body) {
+      if (!Array.isArray(body.items)) fail(400, "items must be an array");
+      if (body.items.length === 0) fail(400, "items must not be empty");
+      const byId = new Map(order.items.map((it) => [it.id, it]));
+      const updates = new Map<string, { size: string | null; answers: string; price: number; subtotal: number }>();
+      for (const entry of body.items as unknown[]) {
+        if (!entry || typeof entry !== "object") fail(400, "items entries must be objects");
+        const rec = entry as Record<string, unknown>;
+        if (typeof rec.id !== "string" || !byId.has(rec.id)) {
+          fail(400, "items entries need the id of a line in this order");
+        }
+        const line = byId.get(rec.id as string)!;
+        const product = await db.product.findUnique({ where: { id: line.productId } });
+
+        // Size — null unless the product currently offers it.
+        let size: string | null = null;
+        let unit = line.price;
+        if (product && product.hasSizes) {
+          if (rec.size !== undefined && rec.size !== null) {
+            if (typeof rec.size !== "string") fail(400, "item size must be a string");
+            const want = rec.size.trim();
+            if (want !== "") {
+              const match = parseProductSizes(product.sizes).find(
+                (s) => s.name.toLowerCase() === want.toLowerCase()
+              );
+              if (!match) fail(400, `Size "${want}" is not on the menu for ${product.name}`);
+              size = match.name;
+              unit = match.price;
+            } else {
+              unit = product.price;
+            }
+          } else {
+            unit = product.price;
+          }
+        } else if (product) {
+          unit = product.price;
+        }
+        // Answers — validated shapes, canonicalized against current defs,
+        // dropped when the product asks nothing (same as registration).
+        let answers: { label: string; value: string }[] = [];
+        if (product && product.hasFields) {
+          if (rec.answers !== undefined && rec.answers !== null) {
+            if (!Array.isArray(rec.answers)) fail(400, "item answers must be an array");
+            const defs = parseProductFields(product.fields);
+            const byLabel = new Map(defs.map((d) => [d.label.toLowerCase(), d.label]));
+            for (const a of rec.answers as unknown[]) {
+              if (!a || typeof a !== "object") fail(400, "item answers entries must be objects");
+              const ar = a as Record<string, unknown>;
+              if (typeof ar.label !== "string" || typeof ar.value !== "string") {
+                fail(400, "item answers entries must look like {label, value}");
+              }
+              const label = ar.label.trim().slice(0, 30);
+              if (label === "") continue;
+              answers.push({
+                label: byLabel.get(label.toLowerCase()) ?? label,
+                value: ar.value.slice(0, 100),
+              });
+            }
+          } else {
+            answers = parseOrderAnswers(line.answers);
+          }
+        }
+        const subtotal = unit * line.quantity;
+        updates.set(line.id, { size, answers: JSON.stringify(answers), price: unit, subtotal });
+      }
+      // Re-total over EVERY line (payload may list a subset).
+      let total = 0;
+      for (const line of order.items) {
+        const u = updates.get(line.id);
+        total += u ? u.subtotal : line.subtotal;
+      }
+      await db.$transaction([
+        ...Array.from(updates.entries()).map(([id, u]) =>
+          db.orderItem.update({
+            where: { id },
+            data: { size: u.size, answers: u.answers, price: u.price, subtotal: u.subtotal },
+          })
+        ),
+        db.order.update({ where: { orderId }, data: { ...data, total } }),
+      ]);
+      const updated = await findOrderRow(orderId);
+      return NextResponse.json({ order: serializeOrder(updated!) });
     }
 
     const updated = await db.order.update({

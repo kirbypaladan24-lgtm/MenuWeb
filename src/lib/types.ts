@@ -51,6 +51,7 @@ export interface OrderAnswer {
 export type PublicProduct = Omit<Product, "sold">;
 
 export interface OrderItem {
+  id: string; // line-item row id (cuid) — used by the Orders edit dialog
   productId: string;
   productName: string;
   temperature: Temperature | null;
@@ -200,6 +201,8 @@ export interface DashboardStats {
   netProfit: number; // revenue − totalCost
   roi: number;
   bestSeller: { name: string; sold: number } | null;
+  /** Top seller per category (Drinks, Pastries, Extras, + any custom ones). */
+  bestSellerByCategory: { category: string; name: string; sold: number }[];
   productStats: ProductStat[];
   hotCold: HotColdStat[];
   paymentBreakdown: { gcash: number; booth: number };

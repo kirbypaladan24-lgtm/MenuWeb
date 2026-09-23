@@ -787,6 +787,46 @@ export default function Dashboard() {
         </Card>
       )}
 
+      {/* Best by category — one crown per category next to the overall one */}
+      {(data.bestSellerByCategory ?? []).length > 0 && (
+        <Card className="gap-4">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Award className="h-5 w-5 text-primary" aria-hidden />
+              Best by Category
+            </CardTitle>
+            <CardDescription>
+              Top seller in each category (served orders only).
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="px-4 sm:px-6">
+            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+              {(data.bestSellerByCategory ?? []).map((b) => (
+                <div
+                  key={b.category}
+                  className="flex items-center gap-3 rounded-lg border px-3 py-2.5"
+                >
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-warning/15 text-warning-foreground">
+                    <Award className="h-5 w-5" aria-hidden />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
+                      {b.category}
+                    </p>
+                    <p className="truncate text-sm font-bold text-foreground">
+                      {b.name}
+                    </p>
+                  </div>
+                  <span className="shrink-0 text-sm font-bold tabular-nums text-foreground">
+                    {b.sold} sold
+                  </span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Products — press one to see who bought it */}
       <ProductsSection onSelect={setBuyersFor} />
 

@@ -18,7 +18,7 @@
 
 import * as React from "react";
 import jsQR from "jsqr";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
   Ban,
@@ -84,7 +84,7 @@ import type {
   PaymentMethod,
   Product,
 } from "@/lib/types";
-import { asList, callOutName, unwrapOrder, useApiError } from "./booth-utils";
+import { BOOTH_QK, asList, callOutName, unwrapOrder, useApiError } from "./booth-utils";
 import { ViewHeader } from "./view-header";
 import { AbortConfirm } from "./abort-confirm";
 import { ServeConfirm } from "./serve-confirm";
@@ -666,6 +666,14 @@ function ManualOrderDialog({ open, onOpenChange, onRegister }: ManualOrderDialog
 export default function Scanner() {
   const { toast } = useToast();
   const apiError = useApiError();
+  const queryClient = useQueryClient();
+
+  // A scan just changed the data — wake every booth view instantly
+  // (waiting line, orders, dashboard) instead of waiting for their
+  // poll timers. Fire-and-forget: the views refetch on their own.
+  const notifyChanged = React.useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: BOOTH_QK });
+  }, [queryClient]);
 
   const [phase, setPhase] = React.useState<Phase>("scan");
   const [order, setOrder] = React.useState<Order | null>(null);
@@ -880,6 +888,7 @@ export default function Scanner() {
       setWarnings(resWarnings);
       setNote("Order registered — it is now in the waiting line.");
       setPhase("result");
+      notifyChanged();
       toast({
         title: "✓ Order registered",
         description: `${shortOrderId(registered.orderId)} · ${callOutName(registered)} · ${formatPeso(registered.total)} · ${paymentMethodLabel(registered.paymentMethod)}.${resWarnings.length > 0 ? " Check the warnings." : ""}`,
@@ -985,6 +994,7 @@ export default function Scanner() {
         setWarnings(ev.warnings ?? []);
         setNote(`Scanned from a phone at ${formatTime(ev.ts)} — order registered.`);
         setPhase("result");
+        notifyChanged();
         toast({
           title: "✓ Order registered (phone scan)",
           description: `${shortOrderId(registered.orderId)} · ${callOutName(registered)} · ${formatPeso(registered.total)} · ${paymentMethodLabel(registered.paymentMethod)}.${(ev.warnings ?? []).length > 0 ? " Check the warnings." : ""}`,

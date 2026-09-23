@@ -7,8 +7,17 @@
 // how many orders come after it.
 
 import * as React from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Coffee, Ban, Mail, Smartphone, Timer, Volume2, Wallet } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { BadgeCheck, Coffee, Ban, Loader2, Mail, Smartphone, Timer, Volume2, Wallet } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -21,7 +30,8 @@ import {
   PaymentStatusBadge,
 } from "@/components/shared/status-badge";
 import { apiFetch } from "@/lib/api";
-import { BOOTH_QK, asList, callOutName } from "./booth-utils";
+import { useToast } from "@/hooks/use-toast";
+import { BOOTH_QK, asList, callOutName, useApiError } from "./booth-utils";
 import {
   formatElapsed,
   formatPeso,
@@ -42,11 +52,18 @@ export default function WaitingLine({
 }) {
   const [serveOrder, setServeOrder] = React.useState<Order | null>(null);
   const [abortOrder, setAbortOrder] = React.useState<Order | null>(null);
+  const [serveAllOpen, setServeAllOpen] = React.useState(false);
+  const [servingAll, setServingAll] = React.useState(false);
+  const { toast } = useToast();
+  const apiError = useApiError();
+  const queryClient = useQueryClient();
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["booth", "waiting"],
     queryFn: () => apiFetch<unknown>("/api/orders?status=WAITING"),
-    refetchInterval: 8000,
+    // Rush-hour heartbeat — the money view refetches fastest (scans also
+    // invalidate instantly, this covers phone scans and other tabs).
+    refetchInterval: 3000,
   });
 
   // FIFO queue: order scanned earliest comes first (#1 = next to serve),
@@ -85,6 +102,44 @@ export default function WaitingLine({
     return "font-semibold text-foreground";
   };
 
+  // Serve every order in the line, FIFO. Best-effort: a failed serve
+  // stays in line and is reported, the rest still complete.
+  async function handleServeAll() {
+    if (waiting.length === 0 || servingAll) return;
+    setServingAll(true);
+    const snapshot = [...waiting];
+    let served = 0;
+    let failed = 0;
+    try {
+      for (const o of snapshot) {
+        try {
+          await apiFetch(`/api/orders/${o.orderId}/serve`, { method: "POST" });
+          served += 1;
+        } catch {
+          failed += 1;
+        }
+      }
+      if (failed === 0) {
+        toast({
+          title: "✓ Line cleared",
+          description: `${served} ${served === 1 ? "order" : "orders"} served — waiting line is empty.`,
+        });
+      } else {
+        toast({
+          title: "Line partially served",
+          description: `${served} served, ${failed} failed and ${failed === 1 ? "stays" : "stay"} in line — try them individually.`,
+          variant: "destructive",
+        });
+      }
+      await queryClient.invalidateQueries({ queryKey: BOOTH_QK });
+    } catch (err) {
+      apiError(err, "Could not serve the line.");
+    } finally {
+      setServingAll(false);
+      setServeAllOpen(false);
+    }
+  }
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <ViewHeader
@@ -92,16 +147,33 @@ export default function WaitingLine({
         title="Waiting Line"
         description="First in, first out — orders line up in scan order and are served fairly. Refreshes automatically."
         action={
-          <Badge
-            variant="secondary"
-            className={
-              count > 0
-                ? "border-warning/40 bg-warning/15 px-3 py-1 text-xs font-bold text-warning-foreground"
-                : "px-3 py-1 text-xs font-bold"
-            }
-          >
-            {count} in line
-          </Badge>
+          <div className="flex items-center gap-2">
+            <Badge
+              variant="secondary"
+              className={
+                count > 0
+                  ? "border-warning/40 bg-warning/15 px-3 py-1 text-xs font-bold text-warning-foreground"
+                  : "px-3 py-1 text-xs font-bold"
+              }
+            >
+              {count} in line
+            </Badge>
+            {count > 0 && (
+              <Button
+                size="sm"
+                className="font-semibold"
+                onClick={() => setServeAllOpen(true)}
+                disabled={servingAll}
+              >
+                {servingAll ? (
+                  <Loader2 className="animate-spin" aria-hidden />
+                ) : (
+                  <BadgeCheck aria-hidden />
+                )}
+                Serve All
+              </Button>
+            )}
+          </div>
         }
       />
 
@@ -312,6 +384,42 @@ export default function WaitingLine({
           onDone={() => setAbortOrder(null)}
         />
       )}
+
+      <AlertDialog
+        open={serveAllOpen}
+        onOpenChange={(o) => {
+          if (!servingAll) setServeAllOpen(o);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Serve all {count} orders?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Every order in line is completed at once — oldest first,{" "}
+              {formatPeso(waiting.reduce((sum, o) => sum + o.total, 0))} total.
+              Make sure GCash payments are verified: serving marks every order{" "}
+              <span className="font-semibold text-foreground">PAID</span>.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={servingAll} className="h-11">
+              Cancel
+            </AlertDialogCancel>
+            <Button
+              className="h-11"
+              onClick={() => void handleServeAll()}
+              disabled={servingAll}
+            >
+              {servingAll ? (
+                <Loader2 className="animate-spin" aria-hidden />
+              ) : (
+                <BadgeCheck aria-hidden />
+              )}
+              SERVE ALL
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

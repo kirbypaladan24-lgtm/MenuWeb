@@ -60,7 +60,7 @@ import {
   paymentMethodLabel,
   shortOrderId,
 } from "@/lib/format";
-import type { Order, OrderStatus, PaymentMethod, PaymentStatus } from "@/lib/types";
+import type { Order, OrderStatus, PaymentMethod, PaymentStatus, Product } from "@/lib/types";
 import { BOOTH_QK, asList, callOutName, useApiError, useBoothDays } from "./booth-utils";
 import { ViewHeader } from "./view-header";
 
@@ -88,12 +88,19 @@ function itemsSummary(order: Order): string {
 /* Edit dialog — customer data + payment info                          */
 /* ------------------------------------------------------------------ */
 
+interface OrderEditLine {
+  id: string;
+  size: string | null;
+  answers: { label: string; value: string }[];
+}
+
 interface OrderEditForm {
   customerName: string;
   customerAlias: string;
   customerEmail: string;
   paymentMethod: PaymentMethod;
   paymentStatus: PaymentStatus;
+  lines: OrderEditLine[];
 }
 
 function toEditForm(o: Order): OrderEditForm {
@@ -103,6 +110,11 @@ function toEditForm(o: Order): OrderEditForm {
     customerEmail: o.customerEmail ?? "",
     paymentMethod: o.paymentMethod,
     paymentStatus: o.paymentStatus,
+    lines: o.items.map((i) => ({
+      id: i.id,
+      size: i.size ?? null,
+      answers: (i.answers ?? []).map((a) => ({ label: a.label, value: a.value })),
+    })),
   };
 }
 
@@ -120,6 +132,18 @@ function OrderEditDialog({
   const [form, setForm] = React.useState<OrderEditForm | null>(null);
   const [saving, setSaving] = React.useState(false);
 
+  // Product menus for the per-line editors (sizes + field defs).
+  const { data: productsData } = useQuery({
+    queryKey: ["booth", "products"],
+    queryFn: () => apiFetch<unknown>("/api/products"),
+    enabled: order !== null,
+  });
+  const menuById = React.useMemo(() => {
+    const map = new Map<string, Product>();
+    for (const p of asList<Product>(productsData, "products")) map.set(p.id, p);
+    return map;
+  }, [productsData]);
+
   React.useEffect(() => {
     setForm(order ? toEditForm(order) : null);
   }, [order]);
@@ -128,6 +152,36 @@ function OrderEditDialog({
 
   function set<K extends keyof OrderEditForm>(key: K, value: OrderEditForm[K]) {
     setForm((f) => (f ? { ...f, [key]: value } : f));
+  }
+
+  function setLine(id: string, patch: Partial<OrderEditLine>) {
+    setForm((f) =>
+      f
+        ? { ...f, lines: f.lines.map((l) => (l.id === id ? { ...l, ...patch } : l)) }
+        : f
+    );
+  }
+
+  function setLineAnswer(lineId: string, label: string, value: string) {
+    setForm((f) => {
+      if (!f) return f;
+      return {
+        ...f,
+        lines: f.lines.map((l) => {
+          if (l.id !== lineId) return l;
+          const needle = label.toLowerCase();
+          const found = l.answers.some((a) => a.label.toLowerCase() === needle);
+          return {
+            ...l,
+            answers: found
+              ? l.answers.map((a) =>
+                  a.label.toLowerCase() === needle ? { ...a, value } : a
+                )
+              : [...l.answers, { label, value }],
+          };
+        }),
+      };
+    });
   }
 
   async function handleSave() {
@@ -152,6 +206,13 @@ function OrderEditDialog({
           customerEmail: form.customerEmail.trim(),
           paymentMethod: form.paymentMethod,
           paymentStatus: form.paymentStatus,
+          items: form.lines.map((l) => ({
+            id: l.id,
+            size: l.size,
+            answers: l.answers
+              .filter((a) => a.label.trim() !== "")
+              .map((a) => ({ label: a.label.trim().slice(0, 30), value: a.value.slice(0, 100) })),
+          })),
         },
       });
       toast({
@@ -173,8 +234,8 @@ function OrderEditDialog({
         <DialogHeader>
           <DialogTitle>Edit {shortOrderId(order.orderId)}</DialogTitle>
           <DialogDescription>
-            Fix a name typo or record a late payment — items and totals stay as
-            they were scanned.
+            Fix a name typo, record a late payment, or correct a size or
+            answer below — size changes re-price at today&apos;s menu.
           </DialogDescription>
         </DialogHeader>
 
@@ -185,6 +246,102 @@ function OrderEditDialog({
             <span className="font-semibold text-foreground">{formatPeso(order.total)}</span>
           </div>
           <p className="mt-1 leading-relaxed">{itemsSummary(order) || "No items"}</p>
+        </div>
+
+        {/* Per-line corrections — size (re-prices the line + retotals the
+            order at current menu prices) and custom answers. */}
+        <div className="grid gap-3">
+          <p className="text-sm font-semibold text-foreground">Items</p>
+          {order.items.map((item, idx) => {
+            const menu = menuById.get(item.productId);
+            const line = form.lines[idx];
+            if (!line) return null;
+            const sizesOn = (menu?.hasSizes ?? false) && (menu?.sizes.length ?? 0) > 0;
+            const defs = menu?.hasFields === true ? (menu?.fields ?? []) : [];
+            const defLabels = new Set(defs.map((d) => d.label.toLowerCase()));
+            const extras = line.answers.filter((a) => !defLabels.has(a.label.toLowerCase()));
+            if (!sizesOn && defs.length === 0 && extras.length === 0) {
+              return (
+                <p key={line.id} className="text-sm text-muted-foreground">
+                  {item.quantity} × {item.productName}
+                  {item.temperature ? ` — ${item.temperature}` : ""}
+                  {item.size ? ` · ${item.size}` : ""}
+                </p>
+              );
+            }
+            return (
+              <div key={line.id} className="grid gap-2 rounded-md border p-3">
+                <p className="text-sm font-semibold text-foreground">
+                  {item.quantity} × {item.productName}
+                  {item.temperature ? (
+                    <span className="font-normal text-muted-foreground"> — {item.temperature}</span>
+                  ) : null}
+                </p>
+                {sizesOn && (
+                  <div className="grid gap-1.5">
+                    <Label htmlFor={`edit-size-${line.id}`}>Size</Label>
+                    <Select
+                      value={line.size ?? ""}
+                      onValueChange={(v) => setLine(line.id, { size: v === "" ? null : v })}
+                      disabled={saving}
+                    >
+                      <SelectTrigger id={`edit-size-${line.id}`} className="w-full">
+                        <SelectValue placeholder="Choose a size…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="">Base price (no size)</SelectItem>
+                        {(menu?.sizes ?? []).map((s) => (
+                          <SelectItem key={s.name} value={s.name}>
+                            {s.name} — {formatPeso(s.price)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+                {defs.map((d) => {
+                  const current =
+                    line.answers.find((a) => a.label.toLowerCase() === d.label.toLowerCase())?.value ?? "";
+                  return (
+                    <div key={d.label} className="grid gap-1.5">
+                      <Label htmlFor={`edit-answer-${line.id}-${d.label}`}>
+                        {d.label}{" "}
+                        {d.required ? (
+                          <span className="text-destructive">*</span>
+                        ) : (
+                          <span className="font-normal text-muted-foreground">(optional)</span>
+                        )}
+                      </Label>
+                      <Input
+                        id={`edit-answer-${line.id}-${d.label}`}
+                        value={current}
+                        onChange={(e) => setLineAnswer(line.id, d.label, e.target.value)}
+                        maxLength={100}
+                        disabled={saving}
+                        autoComplete="off"
+                      />
+                    </div>
+                  );
+                })}
+                {extras.map((a) => (
+                  <div key={a.label} className="grid gap-1.5">
+                    <Label htmlFor={`edit-answer-${line.id}-${a.label}`}>{a.label}</Label>
+                    <Input
+                      id={`edit-answer-${line.id}-${a.label}`}
+                      value={a.value}
+                      onChange={(e) => setLineAnswer(line.id, a.label, e.target.value)}
+                      maxLength={100}
+                      disabled={saving}
+                      autoComplete="off"
+                    />
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+          <p className="text-xs text-muted-foreground">
+            Changing a size re-prices that line at today&apos;s menu and retotals the order.
+          </p>
         </div>
 
         <div className="grid gap-4">
@@ -308,6 +465,9 @@ export default function OrdersView() {
       const qs = params.toString();
       return apiFetch<unknown>(qs ? `/api/orders?${qs}` : "/api/orders");
     },
+    // Live log — new scans land here without a manual refresh (same 8s
+    // heartbeat as the waiting line; scan invalidations jump the queue).
+    refetchInterval: 8000,
   });
 
   const orders = React.useMemo(() => {

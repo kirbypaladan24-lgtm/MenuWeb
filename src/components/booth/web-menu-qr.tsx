@@ -112,7 +112,7 @@ export function WebMenuQR() {
               alt={`QR code linking to the ${boothName} web menu`}
               width={512}
               height={512}
-              className="h-44 w-44 sm:h-48 sm:w-48"
+              className="print-qr-code h-44 w-44 sm:h-48 sm:w-48"
               unoptimized
             />
           ) : (
@@ -120,9 +120,31 @@ export function WebMenuQR() {
               Generating QR…
             </div>
           )}
-          <p className="max-w-full break-all text-center font-mono text-[10px] font-semibold leading-relaxed text-poster-ink-soft">
+          <p className="no-print max-w-full break-all text-center font-mono text-[10px] font-semibold leading-relaxed text-poster-ink-soft">
             {encodedUrl}
           </p>
+          {/* SPECS org lockup — prints on the poster so the paper carries
+              who runs the booth, not just the QR. */}
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-white ring-1 ring-poster-line">
+              <Image
+                src="/images/brand/specs-logo.png"
+                alt="SPECS seal"
+                width={56}
+                height={56}
+                className="h-14 w-14 object-contain"
+              />
+            </span>
+            <span className="text-left">
+              <span className="block text-[10px] font-bold uppercase tracking-[0.18em] text-poster-ink-soft">
+                Presented by SPECS
+              </span>
+              <span className="block max-w-56 text-[10px] font-semibold leading-snug text-poster-ink">
+                Society of Programmers &amp; Enthusiasts in Computer Science,
+                Partido State University
+              </span>
+            </span>
+          </div>
           {!isLive && (
             <p className="rounded-md bg-poster-note/25 px-2.5 py-1.5 text-center text-[10px] font-bold uppercase tracking-wide text-poster-note-ink">
               Placeholder — set the real link in Settings
