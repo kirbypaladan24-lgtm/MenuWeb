@@ -127,7 +127,9 @@ function ManualOrderDialog({ open, onOpenChange, onRegister }: ManualOrderDialog
   const [email, setEmail] = React.useState("");
   const [pay, setPay] = React.useState<PaymentMethod>("GCASH");
   const [sizeName, setSizeName] = React.useState("");
-  const [answers, setAnswers] = React.useState<Record<string, string>>({});
+  // One answer set per copy (karaoke-style); the temp path shares set 0.
+  const [answerSets, setAnswerSets] = React.useState<Record<string, string>[]>([{}]);
+  const [copies, setCopies] = React.useState(1);
   const [nameError, setNameError] = React.useState<string | null>(null);
   const [emailError, setEmailError] = React.useState<string | null>(null);
 
@@ -146,19 +148,51 @@ function ManualOrderDialog({ open, onOpenChange, onRegister }: ManualOrderDialog
   const selected = products.find((p) => p.id === productId) ?? null;
   const hasTemp = selected?.hasTemperature ?? false;
   const tempCount = hotQty + coldQty;
-  const unitCount = hasTemp ? tempCount : qty;
+  // Custom inputs — honored only while the product's flag is on.
+  const fieldsOn = (selected?.hasFields ?? false) && (selected?.fields.length ?? 0) > 0;
+  // Multi-copy booking (karaoke-style): field products WITHOUT a
+  // temperature choice book N copies with one answer set each.
+  const copiesOn = fieldsOn && !hasTemp;
+  const answers = answerSets[0] ?? {};
+  function setAnswers(
+    next: Record<string, string> | ((prev: Record<string, string>) => Record<string, string>)
+  ) {
+    setAnswerSets((prev) => {
+      const cur = prev[0] ?? {};
+      const resolved = typeof next === "function" ? next(cur) : next;
+      const out = [...prev];
+      out[0] = resolved;
+      return out;
+    });
+  }
+  function copyMissing(idx: number): boolean {
+    if (!selected || !fieldsOn) return false;
+    const set = answerSets[idx] ?? {};
+    return (selected.fields ?? []).some(
+      (f) => f.required && (set[f.label] ?? "").trim() === ""
+    );
+  }
+  const fieldsMissing = fieldsOn
+    ? copiesOn
+      ? Array.from({ length: copies }, (_, i) => i).some(copyMissing)
+      : (selected?.fields.some(
+          (f) => f.required && (answers[f.label] ?? "").trim() === ""
+        ) ?? false)
+    : false;
+  const unitCount = copiesOn ? copies : hasTemp ? tempCount : qty;
+
+  function changeCopies(n: number) {
+    const clamped = Math.max(1, Math.min(10, n));
+    setCopies(clamped);
+    setAnswerSets((prev) =>
+      Array.from({ length: clamped }, (_, i) => prev[i] ?? {})
+    );
+  }
   // Size menu — honored only while the product's flag is on.
   const sizesOn = (selected?.hasSizes ?? false) && (selected?.sizes.length ?? 0) > 0;
   const unitPrice = sizesOn
     ? (selected?.sizes.find((s) => s.name === sizeName)?.price ?? 0)
     : (selected?.price ?? 0);
-  // Custom inputs — honored only while the product's flag is on.
-  const fieldsOn = (selected?.hasFields ?? false) && (selected?.fields.length ?? 0) > 0;
-  const fieldsMissing = fieldsOn
-    ? (selected?.fields.some(
-        (f) => f.required && (answers[f.label] ?? "").trim() === ""
-      ) ?? false)
-    : false;
 
   // Reset the form every time the dialog is (re)opened.
   React.useEffect(() => {
@@ -167,6 +201,8 @@ function ManualOrderDialog({ open, onOpenChange, onRegister }: ManualOrderDialog
       setHotQty(0);
       setColdQty(0);
       setQty(1);
+      setCopies(1);
+      setAnswerSets([{}]);
       setName("");
       setAlias("");
       setEmail("");
@@ -189,7 +225,8 @@ function ManualOrderDialog({ open, onOpenChange, onRegister }: ManualOrderDialog
     setColdQty(0);
     setQty(1);
     setSizeName("");
-    setAnswers({});
+    setCopies(1);
+    setAnswerSets([{}]);
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -219,37 +256,51 @@ function ManualOrderDialog({ open, onOpenChange, onRegister }: ManualOrderDialog
     // No id — the server assigns the next sequential ORD-####.
     // Temperature products → one line per temperature with its own count
     // (2 HOT + 1 COLD = two items — the same shape the customer site
-    // produces, so every system interprets it identically). Every line
-    // carries the chosen size (z) priced at the size's own price, plus the
-    // custom-field answers (a).
+    // produces, so every system interprets it identically). Multi-copy
+    // field products → one quantity-1 line per copy, each with its own
+    // answers (karaoke shape). Every line carries the chosen size (z)
+    // priced at the size's own price, plus the custom-field answers (a).
     const sizeTag = sizesOn ? sizeName : null;
-    const answerTag =
+    const answerFor = (idx: number) =>
       fieldsOn && selected.fields.length > 0
         ? selected.fields
-            .map((f) => ({ l: f.label, v: (answers[f.label] ?? "").slice(0, 100) }))
+            .map((f) => ({
+              l: f.label,
+              v: ((copiesOn ? (answerSets[idx] ?? {}) : answers)[f.label] ?? "").slice(0, 100),
+            }))
             .filter((a) => a.v.trim() !== "")
         : [];
     const items: QrOrderPayload["items"] = selected.hasTemperature
       ? [
           ...(hotQty > 0
-            ? [{ pid: selected.id, q: hotQty, n: selected.name, t: "HOT", ...(sizeTag ? { z: sizeTag } : {}), ...(answerTag.length > 0 ? { a: answerTag } : {}), s: unitPrice * hotQty }]
+            ? [{ pid: selected.id, q: hotQty, n: selected.name, t: "HOT", ...(sizeTag ? { z: sizeTag } : {}), ...(answerFor(0).length > 0 ? { a: answerFor(0) } : {}), s: unitPrice * hotQty }]
             : []),
           ...(coldQty > 0
-            ? [{ pid: selected.id, q: coldQty, n: selected.name, t: "COLD", ...(sizeTag ? { z: sizeTag } : {}), ...(answerTag.length > 0 ? { a: answerTag } : {}), s: unitPrice * coldQty }]
+            ? [{ pid: selected.id, q: coldQty, n: selected.name, t: "COLD", ...(sizeTag ? { z: sizeTag } : {}), ...(answerFor(0).length > 0 ? { a: answerFor(0) } : {}), s: unitPrice * coldQty }]
             : []),
         ]
-      : [
-          {
+      : copiesOn
+        ? Array.from({ length: copies }, (_, c) => ({
             pid: selected.id,
-            q: qty,
+            q: 1,
             n: selected.name,
             t: selected.defaultTemperature ?? null,
             ...(sizeTag ? { z: sizeTag } : {}),
-            ...(answerTag.length > 0 ? { a: answerTag } : {}),
-            s: unitPrice * qty,
-          },
-        ];
-    const subtotal = unitPrice * (selected.hasTemperature ? tempCount : qty);
+            ...(answerFor(c).length > 0 ? { a: answerFor(c) } : {}),
+            s: unitPrice,
+          }))
+        : [
+            {
+              pid: selected.id,
+              q: qty,
+              n: selected.name,
+              t: selected.defaultTemperature ?? null,
+              ...(sizeTag ? { z: sizeTag } : {}),
+              ...(answerFor(0).length > 0 ? { a: answerFor(0) } : {}),
+              s: unitPrice * qty,
+            },
+          ];
+    const subtotal = unitPrice * (selected.hasTemperature ? tempCount : copiesOn ? copies : qty);
     const payload: QrOrderPayload = {
       v: 1,
       name: trimmedName,
@@ -341,8 +392,9 @@ function ManualOrderDialog({ open, onOpenChange, onRegister }: ManualOrderDialog
             </div>
           )}
 
-          {/* Custom inputs — answers ride inside the QR with the order. */}
-          {fieldsOn && (
+          {/* Custom inputs — answers ride inside the QR with the order.
+              Multi-copy mode renders one group per copy (karaoke-style). */}
+          {fieldsOn && !copiesOn && (
             <div className="grid gap-2">
               <span className="text-sm font-medium leading-none text-foreground">
                 Extra details
@@ -377,6 +429,54 @@ function ManualOrderDialog({ open, onOpenChange, onRegister }: ManualOrderDialog
                   Fill the required inputs first.
                 </p>
               )}
+            </div>
+          )}
+          {fieldsOn && copiesOn && (
+            <div className="grid gap-2">
+              <span className="text-sm font-medium leading-none text-foreground">
+                Extra details — one set per copy
+              </span>
+              {Array.from({ length: copies }, (_, c) => (
+                <div key={c} className="grid gap-2 rounded-lg border p-3">
+                  <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                    Copy {c + 1} of {copies}
+                  </p>
+                  {selected!.fields.map((f) => (
+                    <div key={f.label} className="grid gap-1.5">
+                      <Label htmlFor={`manual-field-${c}-${f.label}`}>
+                        {f.label}{" "}
+                        {f.required ? (
+                          <span className="text-destructive">*</span>
+                        ) : (
+                          <span className="font-normal text-muted-foreground">
+                            (optional)
+                          </span>
+                        )}
+                      </Label>
+                      <Input
+                        id={`manual-field-${c}-${f.label}`}
+                        value={answerSets[c]?.[f.label] ?? ""}
+                        onChange={(e) =>
+                          setAnswerSets((prev) => {
+                            const out = [...prev];
+                            out[c] = { ...(out[c] ?? {}), [f.label]: e.target.value };
+                            return out;
+                          })
+                        }
+                        maxLength={100}
+                        placeholder={f.label}
+                        className="h-11"
+                        autoComplete="off"
+                      />
+                    </div>
+                  ))}
+                  {copyMissing(c) && (
+                    <p className="text-xs font-medium text-destructive" role="alert">
+                      Fill the required inputs for copy {c + 1} first.
+                    </p>
+                  )}
+                </div>
+              ))}
             </div>
           )}
 
@@ -493,20 +593,24 @@ function ManualOrderDialog({ open, onOpenChange, onRegister }: ManualOrderDialog
             </p>
           )}
 
-          {/* Quantity — only for items WITHOUT a temperature choice */}
+          {/* Quantity — copies with per-copy answers for multi-copy field
+              products (karaoke-style), plain quantity otherwise. Neither
+              shows for temperature-choice items (they use the steppers). */}
           {selected && !selected.hasTemperature && (
             <div className="grid gap-2">
               <span className="text-sm font-medium leading-none text-foreground">
-                Quantity
+                {copiesOn ? "How many? — one answer set each" : "Quantity"}
               </span>
               <div className="flex items-center gap-3">
                 <Button
                   type="button"
                   variant="outline"
                   className="h-11 w-11"
-                  onClick={() => setQty((q) => Math.max(1, q - 1))}
-                  disabled={qty <= 1}
-                  aria-label="Decrease quantity"
+                  onClick={() =>
+                    copiesOn ? changeCopies(copies - 1) : setQty((q) => Math.max(1, q - 1))
+                  }
+                  disabled={copiesOn ? copies <= 1 : qty <= 1}
+                  aria-label={copiesOn ? "Fewer copies" : "Decrease quantity"}
                 >
                   <Minus aria-hidden />
                 </Button>
@@ -515,14 +619,14 @@ function ManualOrderDialog({ open, onOpenChange, onRegister }: ManualOrderDialog
                   className="w-10 text-center text-xl font-bold tabular-nums"
                   aria-live="polite"
                 >
-                  {qty}
+                  {copiesOn ? copies : qty}
                 </span>
                 <Button
                   type="button"
                   variant="outline"
                   className="h-11 w-11"
-                  onClick={() => setQty((q) => q + 1)}
-                  aria-label="Increase quantity"
+                  onClick={() => (copiesOn ? changeCopies(copies + 1) : setQty((q) => q + 1))}
+                  aria-label={copiesOn ? "More copies" : "Increase quantity"}
                 >
                   <Plus aria-hidden />
                 </Button>
@@ -630,7 +734,9 @@ function ManualOrderDialog({ open, onOpenChange, onRegister }: ManualOrderDialog
               {selected
                 ? hasTemp
                   ? `Total — ${hotQty} hot + ${coldQty} cold${sizesOn && sizeName ? ` · ${sizeName}` : ""}`
-                  : `Total — ${qty} × ${formatPeso(unitPrice)}${sizesOn && sizeName ? ` (${sizeName})` : ""}`
+                  : copiesOn
+                    ? `Total — ${copies} ${copies === 1 ? "copy" : "copies"}${sizesOn && sizeName ? ` · ${sizeName}` : ""}`
+                    : `Total — ${qty} × ${formatPeso(unitPrice)}${sizesOn && sizeName ? ` (${sizeName})` : ""}`
                 : "Total"}
             </span>
             <span className="text-lg font-bold text-secondary-foreground">

@@ -13,6 +13,7 @@
 // structural problems fail the whole import with a 400 and touch nothing.
 import { db } from "@/lib/db";
 import { NextResponse } from "next/server";
+import type { Prisma } from "@prisma/client";
 import { requireRole } from "@/lib/auth";
 import { errorResponse, fail, readJson, unauthorized } from "@/app/api/_lib/http";
 import { parseOrderAnswers, parseProductFields, parseProductSizes } from "@/app/api/_lib/service";
@@ -48,6 +49,32 @@ interface CleanItem {
   quantity: number;
   price: number;
   subtotal: number;
+}
+
+/**
+ * Re-derive every touched product's `sold` counter from SERVED lines.
+ * Imports bypass the serve endpoint (the only other writer of `sold`),
+ * so without this the counters silently drift — for karaoke songs and
+ * every other product alike. Unknown productIds are skipped (updateMany
+ * never throws on a miss).
+ */
+async function recountSold(
+  tx: Prisma.TransactionClient,
+  productIds: string[]
+): Promise<void> {
+  if (productIds.length === 0) return;
+  const sums = await tx.orderItem.groupBy({
+    by: ["productId"],
+    where: { productId: { in: productIds }, order: { orderStatus: "SERVED" } },
+    _sum: { quantity: true },
+  });
+  for (const pid of productIds) {
+    const found = sums.find((s) => s.productId === pid);
+    await tx.product.updateMany({
+      where: { id: pid },
+      data: { sold: found?._sum.quantity ?? 0 },
+    });
+  }
 }
 
 export async function POST(req: Request) {
@@ -162,16 +189,18 @@ export async function POST(req: Request) {
 
     if (mode === "merge") {
       await db.$transaction(async (tx) => {
+        const touched = new Set<string>();
         for (const p of products) {
           const exists = await tx.product.findUnique({ where: { id: p.id } });
           if (exists) {
-          const { id, ...fields } = p;
-          await tx.product.update({ where: { id }, data: fields });
+            const { id, ...fields } = p;
+            await tx.product.update({ where: { id }, data: fields });
             productsUpdated += 1;
           } else {
             await tx.product.create({ data: p });
             productsAdded += 1;
           }
+          touched.add(p.id);
         }
         for (const o of orders) {
           const exists = await tx.order.findUnique({ where: { orderId: o.orderId } });
@@ -198,7 +227,12 @@ export async function POST(req: Request) {
             },
           });
           ordersAdded += 1;
+          for (const it of items) touched.add(it.productId);
         }
+        // Sold counters bypass the serve endpoint on import — re-derive
+        // them from SERVED lines so every product (karaoke included)
+        // reports truth instead of the file's snapshot value.
+        await recountSold(tx, [...touched]);
       });
       return NextResponse.json({ ok: true, mode, productsAdded, productsUpdated, ordersAdded, ordersSkipped });
     }
@@ -207,8 +241,10 @@ export async function POST(req: Request) {
       await tx.orderItem.deleteMany({});
       await tx.order.deleteMany({});
       await tx.product.deleteMany({});
+      const touched = new Set<string>();
       for (const p of products) {
         await tx.product.create({ data: p });
+        touched.add(p.id);
       }
       for (const o of orders) {
         const { items, ...orderData } = o;
@@ -229,7 +265,10 @@ export async function POST(req: Request) {
             },
           },
         });
+        for (const it of o.items) touched.add(it.productId);
       }
+      // Same recount as merge — file snapshot values are advisory only.
+      await recountSold(tx, [...touched]);
       if (settings) {
         const startDate = asDateOrNull(settings.startDate) ?? new Date();
         const rawEnd = asDateOrNull(settings.endDate);
